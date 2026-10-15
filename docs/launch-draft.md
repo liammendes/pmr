@@ -1,22 +1,20 @@
-# X launch draft
+# X launch thread
 
-Draft only. Nothing has been posted to X. The repository became public on 16 October 2026 at Liam’s request; access was verified without authentication.
+Published on 16 October 2026 from [@liammendess](https://x.com/liammendess), using X’s **Post all** thread composer. All four posts were verified live and linked in order. The repository became public on 16 October 2026 at Liam’s request; access was verified without authentication.
+
+[Read the published thread](https://x.com/liammendess/status/2110876284813214052). The 40-second launch video is attached to the first post.
 
 ## Thread
 
-Attach the 40-second video to the first post. The following posts are replies in order.
+### [Post 1](https://x.com/liammendess/status/2110876284813214052)
 
-### Post 1
-
-I built pmr and it's now open source!!
-
-A Rust process manager with PM2-style commands.
+Introducing pmr, a familiar process manager with PM2-style commands
 
 Dev servers, background workers, coding agents... keep them running, see the logs, recover when they crash.
 
 Try now: https://github.com/liammendes/pmr
 
-### Post 2
+### [Post 2](https://x.com/liammendess/status/2110876287682355629)
 
 Give your coding agents observability into what's going on.
 
@@ -24,25 +22,23 @@ They can check whether that build actually finished, read the logs, see what's s
 
 Give your Agents the process management experience they deserve!!!!
 
-### Post 3
+### [Post 3](https://x.com/liammendess/status/2110876290308092178)
 
-Ran a comparison with PM2 on my M1 Max, 10 CPU cores, 32GiB RAM.
+Listing 10 processes as JSON on my M1 Max... unbelievable difference.
 
-Listing 10 processes as JSON:
 pmr 1.0.0: 14.7ms
 PM2 7.0.4: 100.1ms
 
-Median of 30 runs each. That's the CLI command, not application performance.
+30 runs each, medians. CLI latency.
+MacBook Pro 16", 10 cores, 32GiB RAM.
 
 Raw results: https://github.com/liammendes/pmr/tree/main/benchmarks
 
-### Post 4
+### [Post 4](https://x.com/liammendess/status/2110876294355530089)
 
-One I really like: Raspberry Pi cameras that recover when the capture process crashes.
+Try it out today! Use pmr for your home-made cameras, long running processes and jobs where you need to see what ran and how it ended.
 
-Keep capture and upload as separate workers, let pmr restart them, carry on.
-
-The demo uses simulated frames on my Mac. Physical Pi testing still to do.
+https://github.com/liammendes/pmr/
 
 ## Image alt text
 
