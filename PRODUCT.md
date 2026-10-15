@@ -22,7 +22,7 @@ The repository is private under liammendes/pmr. Launch copy is draft only. PM2 c
 
 ## Brand Commitments
 
-Liam Mendes personal project only. Direct, warm, professional writing. The current identity uses the same deep blue gradient for the PMR lettering and terminal icon. Finish the icon in Apple Icon Composer. The official Liam Mendes vector logo sits 64 px from both the top and right edges. All supporting composition typography is black (#000000). The PMR wordmark, headline and description share a 100 px left edge. Keep the artwork free of URL and native-supervisor footers.
+Liam Mendes personal project only. Direct, warm, professional writing. The current identity uses the same deep blue gradient for the PMR lettering and terminal icon. Finish the icon in Apple Icon Composer. The official Liam Mendes vector logo follows Liam’s Paper layouts: bottom-right in the film, top-left in the poster. All supporting composition typography is black (#000000). The intro wordmark, headline and description share a 100 px left edge; the poster centres its wordmark and copy. Keep the artwork free of URL and native-supervisor footers.
 
 ## Evidence on Hand
 

@@ -31,7 +31,7 @@ typography:
     letterSpacing: "-.035em"
   poster-headline:
     fontFamily: "Manrope, sans-serif"
-    fontSize: "72px"
+    fontSize: "56px"
     fontWeight: 750
     lineHeight: "80px"
     letterSpacing: "-.035em"
@@ -58,7 +58,7 @@ rounded:
   bar: "12px"
 spacing:
   content-inset: "100px"
-  author-inset: "64px"
+  author-inset: "24px"
   bar-label-gap: "17px"
   bar-row-gap: "58px"
 components:
@@ -93,7 +93,7 @@ components:
     typography: "{typography.label}"
   author-logo:
     width: "148px"
-    height: "73.54320987654322px"
+    height: "73.5432px"
 ---
 
 # Design System: PMR launch media
@@ -112,7 +112,7 @@ The implementation is [Launch.tsx](media/video/src/Launch.tsx), registered by [i
 
 - A shared vertical blue gradient in the PMR lettering and native terminal icon.
 - A white pearl icon backing, white terminal prompt and blue status jewel.
-- Black supporting text, a shared left edge and the official Liam Mendes vector logo.
+- Black supporting text, a shared film left edge, centred poster copy and the official Liam Mendes vector logo.
 - Real terminal captures, stable measured values and visible qualifications.
 - One shared identity transition, restrained entrances and accessible alternatives.
 
@@ -143,7 +143,7 @@ Terminal captures retain their original colours. Icon material rendering adds hi
 
 **Identity lettering:** PMR is the supplied [vector wordmark](media/video/public/pmr-wordmark.svg), with rounded, substantial lowercase forms. The [official Liam Mendes logo](media/video/public/liam-mendes.svg) is also vector artwork. Neither is reconstructed with a font.
 
-The frontmatter records the exact sizes used on the 1920 × 1080 canvas; there is no inferred modular scale. Display serves dashboard and benchmark headings; hero, camera and poster headings use their own optical sizes. Body serves captions, method and limitations. Metric uses tabular numerals. Label is the camera startup-setup note.
+The frontmatter records the exact sizes used on the 1920 × 1080 canvas; there is no inferred modular scale. Display serves dashboard and benchmark headings; hero, camera and poster headings use their own optical sizes. Body serves film captions, method and limitations. The poster description uses 20px Manrope with a 41px line height. Metric uses tabular numerals. Label is the camera startup-setup note.
 
 **The Text Carries Meaning Rule.** Keep headings, values and caveats as clear Manrope text. Preserve the vector PMR lettering and official author logo as assets, with their text alternatives.
 
@@ -151,16 +151,16 @@ The frontmatter records the exact sizes used on the 1920 × 1080 canvas; there i
 
 The film and poster use a fixed **1920 × 1080** canvas. Both films run at **60 fps** for **1440 frames / 24 seconds**. Playback scales the whole frame; there are no breakpoints or responsive reflow rules. The transcript carries detailed meaning when terminal text becomes too small.
 
-PMR lettering, headings, descriptions and screenshots share **x=100**. The official author logo is anchored **64 px from the top and right**, at its source aspect ratio. It stays visible across the film and poster.
+In the film, PMR lettering, headings, descriptions and screenshots share **x=100**. The official author logo stays visible throughout at **148 × 73.5432 px**, anchored **24 px from the right and 24.019 px from the bottom**. The poster places the author logo at **(32, 32), 96 × 48 px**.
 
 | Surface | Current arrangement |
 | --- | --- |
-| Intro | Wordmark (100, 235), 1000 × 374; icon (1280, 240), 420 × 420; headline (100, 735); caption y=842. |
+| Intro | Wordmark (100, 235), 1000 × 374; icon (1137, 281), 256 × 256, rotated 346.14° about its top-left corner; headline (100, 735); caption y=842. |
 | Evidence scenes | Compact wordmark (100, 64), scale 0.21; heading y=197; caption y=310; dashboard/camera capture (100, 425), 1720 px wide. |
 | Benchmark | Comparison (100, 420), 1720 px wide; context lines y=816, 870 and 924. |
-| Poster | Wordmark (100, 85), 670 × 250.58; icon (1480, 175), 260.4 × 260.4; headline (100, 378); caption y=478; capture (100, 550), 1720 px wide. |
+| Poster | Wordmark centred at x=960, top y=85, 670 × 250.58; headline centred at x=960, top y=382, 56px/80px; description centred at x=959.5, top y=462, 20px/41px; capture (100, 550), 1720 px wide; no icon. |
 
-The poster uses the same left alignment as the film. Artwork has no repository URL or native-supervisor footer. The camera scene retains a factual startup-setup note at (100, 1003).
+The poster centres its wordmark and copy, following Liam’s current Paper composition. Artwork has no repository URL or native-supervisor footer. The camera scene retains a factual startup-setup note at (100, 1003).
 
 The sequence is intro (0–4 s), dashboard (4–10 s), benchmark (10–17 s) and camera recovery (17–24 s). Each scene carries one dominant message.
 
@@ -187,7 +187,7 @@ The SVG owns the wordmark’s rounded silhouettes and fine edge highlight. The n
 
 Use [pmr-wordmark.svg](media/video/public/pmr-wordmark.svg), [pmr-icon.png](media/video/public/pmr-icon.png) and [liam-mendes.svg](media/video/public/liam-mendes.svg) at their original proportions. The editable icon is [PMR.icon](media/brand/PMR.icon), built and exported in Apple Icon Composer. Its three separate groups are **Terminal Prompt**, **Status Jewel** and **Blue Face**, over a white backing. Preserve that editable structure.
 
-The wordmark travels from (100, 235), scale 1, to (100, 64), scale 0.21 during frames 210–246 (600 ms), using cubic-bezier(0.77, 0, 0.175, 1). The intro icon settles from rotateY(-8deg) and translateY(15px) to rest over frames 0–90 (1500 ms), with a 1300-pixel perspective.
+The wordmark travels from (100, 235), scale 1, to (100, 64), scale 0.21 during frames 210–246 (600 ms), using cubic-bezier(0.77, 0, 0.175, 1). The intro icon keeps a static 346.14° rotation about its top-left corner. Inside that rotated wrapper, it settles from rotateY(-8deg) and translateY(15px) to rest over frames 0–90 (1500 ms), with a 1300-pixel perspective.
 
 ### Headings and captions
 
@@ -205,7 +205,7 @@ Each row pairs a left-aligned manager name with a right-aligned, tabular value. 
 
 ### Accessible alternatives and provenance
 
-LaunchReducedMotion removes scene translation, icon tilt, screenshot transforms and bar growth. It retains opacity transitions. The wordmark switches position and scale at frame 225, when its opacity is zero, with 21-frame (350 ms) fades on either side. This is a separate export.
+LaunchReducedMotion removes scene translation, the animated icon settle, screenshot transforms and bar growth. It preserves the icon’s static Paper rotation. It retains opacity transitions. The wordmark switches position and scale at frame 225, when its opacity is zero, with 21-frame (350 ms) fades on either side. This is a separate export.
 
 Deliver the [static poster](docs/assets/pmr-launch.png), [reduced-motion film](docs/assets/pmr-launch-reduced-motion.mp4) and [written transcript plus poster alt text](docs/launch-draft.md). Both films are silent. JSX alternatives identify the logos, icon and real captures; exported PNG/MP4 files still need accompanying text alternatives.
 
@@ -218,7 +218,7 @@ The sidecar previews the implemented headline, caption, benchmark and author-log
 ### Do:
 
 - Do use the current blue SVG wordmark, Icon Composer export and official Liam Mendes SVG.
-- Do align the PMR wordmark, headline and description at x=100; place the author logo 64 px from the top and right edges.
+- Do keep the film wordmark, headline and description at x=100, with its author logo bottom-right; centre the poster wordmark and copy, with its author logo top-left.
 - Do keep all supporting composition typography black and retain the original pixels in terminal captures.
 - Do keep benchmark labels, values, sample count, hardware and command-specific limits visible.
 - Do preserve the static poster, written transcript and reduced-motion film as accessible alternatives.

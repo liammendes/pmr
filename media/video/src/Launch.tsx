@@ -2,7 +2,7 @@ import React from 'react';
 import {AbsoluteFill, Composition, Easing, Img, Still, interpolate, staticFile, useCurrentFrame} from 'remotion';
 
 const palette = {paper:'#faf9f6',ink:'#000000',blue:'#0057ff',track:'#e5e5e5'};
-const alignment = {left:100,authorInset:64};
+const alignment = {left:100};
 const wordmarkShadow='drop-shadow(0 3px 0 #788bb133) drop-shadow(0 16px 16px #34476c1f)';
 const iconShadow='drop-shadow(0 3px 4px #2d38551a) drop-shadow(0 32px 36px #3e538629)';
 const fonts = `@font-face{font-family:Manrope;src:url('${staticFile('fonts/manrope.woff2')}') format('woff2');font-weight:200 800}*{box-sizing:border-box}`;
@@ -11,7 +11,7 @@ const easeMove=Easing.bezier(0.77,0,0.175,1);
 const progress=(frame:number,start:number,end:number,easing=easeOut)=>interpolate(frame,[start,end],[0,1],{extrapolateLeft:'clamp',extrapolateRight:'clamp',easing});
 const shadow='0 3px 5px #12214118, 0 26px 55px #12214128, 0 70px 90px #15358b12';
 const Base:React.FC<{children:React.ReactNode}>=({children})=><AbsoluteFill style={{background:palette.paper,color:palette.ink,fontFamily:'Manrope, sans-serif',WebkitFontSmoothing:'antialiased'}}><style>{fonts}</style>{children}</AbsoluteFill>;
-const AuthorLogo=()=> <Img alt="Liam Mendes" src={staticFile('liam-mendes.svg')} style={{position:'absolute',right:alignment.authorInset,top:alignment.authorInset,width:148,height:148*32.2/64.8}}/>;
+const AuthorLogo:React.FC<{style?:React.CSSProperties}>=({style})=> <Img alt="Liam Mendes" src={staticFile('liam-mendes.svg')} style={{position:'absolute',right:24,bottom:24.019,width:148,height:73.5432,...style}}/>;
 const Wordmark:React.FC<{style?:React.CSSProperties}>=({style})=><Img alt="pmr" src={staticFile('pmr-wordmark.svg')} style={{width:1000,height:374,filter:wordmarkShadow,...style}}/>;
 const TerminalIcon:React.FC<{style?:React.CSSProperties}>=({style})=><Img alt="Deep blue terminal icon" src={staticFile('pmr-icon.png')} style={{width:420,height:420,filter:iconShadow,...style}}/>;
 const Screenshot:React.FC<{camera?:boolean;style?:React.CSSProperties}>=({camera=false,style})=><div style={{width:1720,overflow:'hidden',borderRadius:16,boxShadow:shadow,...style}}><Img alt={camera?'Real pmr camera-sim dashboard after one restart':'Real pmr dashboard with four local demo services'} src={staticFile(camera?'pmr-camera-recovery.jpg':'pmr-dashboard.jpg')} style={{width:'100%',display:'block'}}/></div>;
@@ -35,7 +35,9 @@ const Launch:React.FC<{reducedMotion?:boolean}>=({reducedMotion=false})=>{
     <AuthorLogo/>
     <Wordmark style={{position:'absolute',left:0,top:0,transformOrigin:'top left',transform:`translate(${logoX}px,${logoY}px) scale(${logoScale})`,opacity:logoOpacity}}/>
     {scene===0&&<div style={{opacity:heroOpacity}}>
-      <TerminalIcon style={{position:'absolute',left:1280,top:240,transform:reducedMotion?'none':`perspective(1300px) rotateY(${interpolate(progress(frame,0,90),[0,1],[-8,0])}deg) translateY(${interpolate(progress(frame,0,90),[0,1],[15,0])}px)`}}/>
+      <div style={{position:'absolute',left:1137,top:281,transformOrigin:'top left',transform:'rotate(346.14deg)'}}>
+        <TerminalIcon style={{display:'block',width:256,height:256,transform:reducedMotion?'none':`perspective(1300px) rotateY(${interpolate(progress(frame,0,90),[0,1],[-8,0])}deg) translateY(${interpolate(progress(frame,0,90),[0,1],[15,0])}px)`}}/>
+      </div>
       <h1 style={{position:'absolute',left:alignment.left,top:735,margin:0,fontSize:74,fontWeight:750,letterSpacing:'-.035em',lineHeight:'82px'}}>Keep your processes running.</h1>
       <Caption top={842}>A Rust process manager for developers and coding agents.</Caption>
     </div>}
@@ -68,11 +70,10 @@ const Launch:React.FC<{reducedMotion?:boolean}>=({reducedMotion=false})=>{
   </Base>;
 };
 const Poster=()=> <Base>
-  <AuthorLogo/>
-  <Wordmark style={{position:'absolute',left:alignment.left,top:85,width:670,height:250.58}}/>
-  <TerminalIcon style={{position:'absolute',left:1480,top:175,width:260.4,height:260.4}}/>
-  <h1 style={{position:'absolute',top:378,left:alignment.left,fontSize:72,fontWeight:750,letterSpacing:'-.035em',lineHeight:'80px',margin:0}}>Keep your processes running.</h1>
-  <Caption top={478}>A Rust process manager for developers and coding agents.</Caption>
+  <AuthorLogo style={{left:32,top:32,right:'auto',bottom:'auto',width:96,height:48}}/>
+  <Wordmark style={{position:'absolute',left:'50%',top:85,width:670,height:250.58,transform:'translateX(-50%)'}}/>
+  <h1 style={{position:'absolute',top:382,left:'50%',transform:'translateX(-50%)',width:'max-content',fontSize:56,fontWeight:750,letterSpacing:'-.035em',lineHeight:'80px',margin:0}}>Keep your processes running.</h1>
+  <div style={{position:'absolute',top:462,left:'calc(50% - 0.5px)',transform:'translateX(-50%)',width:'max-content',fontSize:20,lineHeight:'41px',color:palette.ink}}>A Rust process manager for developers and coding agents.</div>
   <Screenshot style={{position:'absolute',left:alignment.left,top:550,boxShadow:'0 3px 5px #12214118, 0 26px 55px #12214128'}}/>
 </Base>;
 export const Root=()=> <><Composition id="Launch" component={Launch} width={1920} height={1080} fps={60} durationInFrames={1440}/><Composition id="LaunchReducedMotion" component={Launch} defaultProps={{reducedMotion:true}} width={1920} height={1080} fps={60} durationInFrames={1440}/><Still id="Poster" component={Poster} width={1920} height={1080}/></>;
