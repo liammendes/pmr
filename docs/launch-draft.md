@@ -1,40 +1,48 @@
 # X launch draft
 
-Draft only. Nothing has been posted. The repository remains private. These posts are written for a future public launch; publish them only after Liam separately decides to make the repository public. Do not use a public launch link while access remains private.
+Draft only. Nothing has been posted to X. The repository became public on 16 October 2026 at Liam’s request; access was verified without authentication.
 
-## Recommended main post
+## Thread
 
-Attach the static poster for an image-led announcement, or the 40-second video as an alternative. Use one, not both.
+Attach the 40-second video to the first post. The following posts are replies in order.
 
-I built pmr: a Rust process manager for developers and coding agents.
+### Post 1
 
-Start services, inspect them as JSON and restart them when they crash. Familiar PM2-style commands, with a native supervisor.
+I built pmr and it's now open source!!
 
-Source, downloads and benchmarks: https://github.com/liammendes/pmr
+A Rust process manager with PM2-style commands.
 
-## Optional replies, in order
+Dev servers, background workers, coding agents... keep them running, see the logs, recover when they crash.
 
-### Reply 1
+Try now: https://github.com/liammendes/pmr
 
-On my M1 Max (10 CPU cores, 32 GB RAM), listing 10 processes took 14.7 ms in pmr vs 100.1 ms in PM2 7.0.4: a 6.8× median-time ratio.
+### Post 2
 
-30 samples each, on a working desktop. That is CLI latency, not a promise that your app runs faster. Raw results are in the repo.
+Give your coding agents observability into what's going on.
 
-### Reply 2
+They can check whether that build actually finished, read the logs, see what's still running & clean up after themselves.
 
-One use case I love: self-healing camera services on Raspberry Pi.
+Give your Agents the process management experience they deserve!!!!
 
-Supervise capture and upload workers. Restart crashes. Restore saved services after reboot setup.
+### Post 3
 
-The demo uses synthetic frames on a Mac; physical Pi testing is still needed.
+Ran a comparison with PM2 on my M1 Max, 10 CPU cores, 32GiB RAM.
 
-### Reply 3
+Listing 10 processes as JSON:
+pmr 1.0.0: 14.7ms
+PM2 7.0.4: 100.1ms
 
-For coding agents, a successful start only means the command launched.
+Median of 30 runs each. That's the CLI command, not application performance.
 
-Name the job, check its exit code, read the logs and clean up afterwards. pmr gives humans and agents the same process state.
+Raw results: https://github.com/liammendes/pmr/tree/main/benchmarks
 
-Early release. Bug reports and reproducible tests welcome.
+### Post 4
+
+One I really like: Raspberry Pi cameras that recover when the capture process crashes.
+
+Keep capture and upload as separate workers, let pmr restart them, carry on.
+
+The demo uses simulated frames on my Mac. Physical Pi testing still to do.
 
 ## Image alt text
 

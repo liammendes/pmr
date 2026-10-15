@@ -18,7 +18,7 @@ Start named processes, inspect their logs and JSON state, and recover from proce
 
 ## Capabilities and Constraints
 
-The repository is private under liammendes/pmr. Launch copy is draft only. PM2 compatibility is partial. Benchmark claims must identify the operation, comparator, samples and hardware. Raspberry Pi camera supervision is a use case; physical Pi hardware has not been tested.
+The repository is public under liammendes/pmr as of 16 October 2026. Launch copy is draft only. PM2 compatibility is partial. Benchmark claims must identify the operation, comparator, samples and hardware. Raspberry Pi camera supervision is a use case; physical Pi hardware has not been tested.
 
 ## Brand Commitments
 
