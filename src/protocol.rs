@@ -31,6 +31,8 @@ pub enum RpcRequest {
         id: u32,
         #[serde(default)]
         env: BTreeMap<String, String>,
+        #[serde(default)]
+        conf: Option<Value>,
     },
     #[serde(rename = "reloadProcessId")]
     ReloadProcessId {
@@ -39,6 +41,8 @@ pub enum RpcRequest {
         env: BTreeMap<String, String>,
         #[serde(default)]
         soft: bool,
+        #[serde(default)]
+        conf: Option<Value>,
     },
     #[serde(rename = "deleteProcessId")]
     DeleteProcessId { id: u32 },
@@ -150,5 +154,10 @@ pub struct BusEvent {
     pub event: String,
     pub at: u64,
     pub process: BusProcessRef,
+    #[serde(default)]
     pub data: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manually: Option<bool>,
 }

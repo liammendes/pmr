@@ -30,7 +30,7 @@ pub const DEFAULT_SERVE_PORT: u16 = 8080;
 pub const DEFAULT_CONCURRENT_ACTIONS: usize = 2;
 
 pub const APP_CONF_DEFAULT_FILE: &str = "ecosystem.config.js";
-pub const DEFAULT_LOG_DATE_FORMAT: &str = "%Y-%m-%dT%H:%M:%S";
+pub const DEFAULT_LOG_DATE_FORMAT: &str = "YYYY-MM-DDTHH:mm:ss";
 
 pub const PREFIX_MSG: &str = "\x1b[36m[PMR]\x1b[0m ";
 pub const PREFIX_MSG_ERR: &str = "\x1b[31m[PMR][ERROR]\x1b[0m ";
@@ -111,7 +111,7 @@ LimitCORE=infinity
 Environment=PATH=%NODE_PATH%:/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
 Environment=PMR_HOME=%HOME_PATH%
 Environment=PM2_HOME=%HOME_PATH%
-PIDFile=%HOME_PATH%/pmr.pid
+PIDFile=%HOME_PATH%/pm2.pid
 Restart=on-failure
 
 ExecStart=%PM2_PATH% resurrect
@@ -137,7 +137,7 @@ LimitCORE=infinity
 Environment=PATH=%NODE_PATH%:/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
 Environment=PMR_HOME=%HOME_PATH%
 Environment=PM2_HOME=%HOME_PATH%
-PIDFile=%HOME_PATH%/pmr.pid
+PIDFile=%HOME_PATH%/pm2.pid
 Restart=on-failure
 
 ExecStart=%PM2_PATH% resurrect
@@ -153,7 +153,7 @@ pub const LAUNCHD_TPL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0">
   <dict>
     <key>Label</key>
-    <string>io.keymetrics.pmr</string>
+    <string>%SERVICE_NAME%</string>
     <key>UserName</key>
     <string>%USER%</string>
     <key>KeepAlive</key>
@@ -180,16 +180,16 @@ pub const LAUNCHD_TPL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
       <string>%HOME_PATH%</string>
     </dict>
     <key>StandardErrorPath</key>
-    <string>/tmp/io.keymetrics.pmr.err</string>
+    <string>/tmp/%SERVICE_NAME%.err</string>
     <key>StandardOutPath</key>
-    <string>/tmp/io.keymetrics.pmr.out</string>
+    <string>/tmp/%SERVICE_NAME%.out</string>
   </dict>
 </plist>
 "#;
 
 pub const UPSTART_TPL: &str = r#"#!/bin/bash
 ### BEGIN INIT INFO
-# Provides:          pmr
+# Provides:          %SERVICE_NAME%
 # Required-Start:    $local_fs $remote_fs
 # Required-Stop:     $local_fs $remote_fs
 # Should-Start:      $network
@@ -200,7 +200,7 @@ pub const UPSTART_TPL: &str = r#"#!/bin/bash
 # Description:       PMR is the next gen process manager
 ### END INIT INFO
 
-NAME=pmr
+NAME=%SERVICE_NAME%
 PM2=%PM2_PATH%
 USER=%USER%
 export PATH=%NODE_PATH%:$PATH
@@ -275,15 +275,64 @@ pub const LOGROTATE_TPL: &str = r#"%HOME_PATH%/logs/*.log %HOME_PATH%/pmr.log %H
 
 pub const NODE_PRELOAD_SHIM_JS: &str = r#"
 (function() {
-  const net = require('net');
+  const expectedParentPid = Number(process.env.PMR_PARENT_PID || 0);
   const ipcSockPath = process.env.PMR_NODE_IPC_SOCK;
+
+  // Strip our preload shim from NODE_OPTIONS and clear PMR_NODE_IPC_SOCK / PMR_PARENT_PID
+  // so grandchild Node.js processes spawned by user apps do not inherit the shim!
+  if (process.env.NODE_OPTIONS) {
+    process.env.NODE_OPTIONS = process.env.NODE_OPTIONS
+      .replace(/--require\s+"[^"]*pmr-preload\.cjs"/g, '')
+      .replace(/--require\s+[^\s]*pmr-preload\.cjs/g, '')
+      .trim();
+    if (!process.env.NODE_OPTIONS) {
+      delete process.env.NODE_OPTIONS;
+    }
+  }
+  delete process.env.PMR_NODE_IPC_SOCK;
+  delete process.env.PMR_PARENT_PID;
+
+  if (expectedParentPid > 0 && process.ppid !== expectedParentPid) {
+    return;
+  }
+
+  const net = require('net');
+  const cluster = require('cluster');
   const isCluster = process.env.exec_mode === 'cluster_mode';
+  const pmId = Number(process.env.pm_id || 0);
+  const instanceId = Number(process.env.NODE_APP_INSTANCE || 0);
+
+  if (process.env.PROCESS_TITLE) {
+    process.title = process.env.PROCESS_TITLE;
+  } else if (process.env.pm_exec_path) {
+    process.title = 'node ' + process.env.pm_exec_path;
+  }
+
+  if (isCluster) {
+    try {
+      Object.defineProperty(cluster, 'isWorker', { value: true, configurable: true, writable: true });
+      Object.defineProperty(cluster, 'isPrimary', { value: false, configurable: true, writable: true });
+      Object.defineProperty(cluster, 'isMaster', { value: false, configurable: true, writable: true });
+      if (!cluster.worker) {
+        cluster.worker = {
+          id: instanceId + 1,
+          process: process,
+          send: function(...a) { return process.send ? process.send(...a) : false; },
+          isDead: function() { return false; },
+          isConnected: function() { return Boolean(process.connected); }
+        };
+      }
+    } catch (e) {}
+  }
+
   let ipcClient = null;
   let ipcConnected = false;
   let pendingMsgs = [];
   let clusterAckCallbacks = [];
 
   function sendToDaemon(payload) {
+    payload.pid = process.pid;
+    payload.pm_id = pmId;
     const line = JSON.stringify(payload) + '\n';
     if (ipcClient && ipcConnected) {
       ipcClient.write(line);
@@ -297,12 +346,10 @@ pub const NODE_PRELOAD_SHIM_JS: &str = r#"
       ipcClient = net.createConnection(ipcSockPath, () => {
         ipcConnected = true;
         ipcClient.unref();
-        ipcClient.write(JSON.stringify({
-          pm_id: Number(process.env.pm_id || 0),
+        sendToDaemon({
           type: 'internal:hello',
-          node_version: process.versions.node,
-          pid: process.pid
-        }) + '\n');
+          node_version: process.versions.node
+        });
         while (pendingMsgs.length > 0) {
           ipcClient.write(pendingMsgs.shift());
         }
@@ -323,6 +370,25 @@ pub const NODE_PRELOAD_SHIM_JS: &str = r#"
                 const cb = clusterAckCallbacks.shift();
                 cb();
               }
+            } else if (msg && msg.type === 'axm:action:trigger') {
+              const actionName = msg.action_name;
+              const param = msg.opts;
+              if (actionName === 'km:inspect' || actionName === 'internal:inspect') {
+                try {
+                  const inspector = require('inspector');
+                  if (inspector.url()) {
+                    inspector.close();
+                    sendToDaemon({ type: 'process:msg', raw: { type: 'axm:reply', data: { action_name: actionName, return: '' } } });
+                  } else {
+                    inspector.open();
+                    sendToDaemon({ type: 'process:msg', raw: { type: 'axm:reply', data: { action_name: actionName, return: inspector.url() || 'enabled' } } });
+                  }
+                } catch (err) {
+                  sendToDaemon({ type: 'process:msg', raw: { type: 'axm:reply', data: { action_name: actionName, return: null, error: String(err) } } });
+                }
+              } else {
+                process.emit('message', actionName, param);
+              }
             } else if (msg && msg.__pmr_raw !== undefined) {
               process.emit('message', msg.__pmr_raw, undefined);
             } else {
@@ -338,6 +404,13 @@ pub const NODE_PRELOAD_SHIM_JS: &str = r#"
   }
 
   if (typeof process.send !== 'function') {
+    process.connected = true;
+    process.disconnect = function() {
+      process.connected = false;
+      if (ipcClient) {
+        try { ipcClient.end(); } catch (e) {}
+      }
+    };
     process.send = function(msg, sendHandle, options, callback) {
       if (typeof sendHandle === 'function') {
         callback = sendHandle;
@@ -345,7 +418,6 @@ pub const NODE_PRELOAD_SHIM_JS: &str = r#"
         callback = options;
       }
       sendToDaemon({
-        pm_id: Number(process.env.pm_id || 0),
         type: 'process:msg',
         raw: msg
       });
@@ -359,13 +431,22 @@ pub const NODE_PRELOAD_SHIM_JS: &str = r#"
 
   net.Server.prototype.listen = function(...args) {
     let requestedPort = null;
+    let requestedHost = null;
     let userCb = null;
 
     if (args.length > 0) {
       if (typeof args[0] === 'number' || (typeof args[0] === 'string' && /^\d+$/.test(args[0]))) {
         requestedPort = Number(args[0]);
-      } else if (args[0] && typeof args[0] === 'object' && typeof args[0].port === 'number') {
-        requestedPort = args[0].port;
+        if (args.length > 1 && typeof args[1] === 'string') {
+          requestedHost = args[1];
+        }
+      } else if (args[0] && typeof args[0] === 'object') {
+        if (typeof args[0].port === 'number' || (typeof args[0].port === 'string' && /^\d+$/.test(args[0].port))) {
+          requestedPort = Number(args[0].port);
+        }
+        if (typeof args[0].host === 'string') {
+          requestedHost = args[0].host;
+        }
       }
     }
 
@@ -389,19 +470,16 @@ pub const NODE_PRELOAD_SHIM_JS: &str = r#"
           clusterAckCallbacks.push(() => userCb.call(this));
         }
         sendToDaemon({
-          pm_id: Number(process.env.pm_id || 0),
           type: 'listening',
           requested_port: requestedPort,
+          requested_host: requestedHost,
           worker_port: workerPort,
           data: realAddr
         });
       });
 
-      if (typeof args[0] === 'number' || typeof args[0] === 'string') {
-        args[0] = 0;
-      } else if (args[0] && typeof args[0] === 'object') {
-        args[0] = Object.assign({}, args[0], { port: 0 });
-      }
+      // Bind worker to loopback ephemeral port 0 with exclusive: true so Node does not call cluster._getServer
+      args = [{ port: 0, host: '127.0.0.1', exclusive: true }];
       return origListen.apply(this, args);
     }
 
@@ -409,13 +487,24 @@ pub const NODE_PRELOAD_SHIM_JS: &str = r#"
       try {
         const addr = origAddress.call(this);
         sendToDaemon({
-          pm_id: Number(process.env.pm_id || 0),
           type: 'listening',
           data: addr
         });
       } catch (e) {}
     });
-    return origListen.apply(this, args);
+    const wasPrimary = cluster.isPrimary;
+    try {
+      if (isCluster) {
+        Object.defineProperty(cluster, 'isPrimary', { value: true, configurable: true, writable: true });
+      }
+      return origListen.apply(this, args);
+    } finally {
+      if (isCluster) {
+        Object.defineProperty(cluster, 'isPrimary', { value: wasPrimary, configurable: true, writable: true });
+      }
+    }
   };
 })();
 "#;
+
+pub const MODULE_CONF_PREFIX: &str = "module-db-v2";

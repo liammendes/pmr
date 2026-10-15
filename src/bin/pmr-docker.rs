@@ -7,6 +7,19 @@ fn main() -> Result<()> {
         .parent()
         .unwrap()
         .join("pmr-runtime");
-    let status = Command::new(exe).args(env::args().skip(1)).status()?;
-    std::process::exit(status.code().unwrap_or(0));
+    let mut cmd = Command::new(exe);
+    cmd.args(env::args().skip(1));
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let err = cmd.exec();
+        return Err(err.into());
+    }
+
+    #[cfg(not(unix))]
+    {
+        let status = cmd.status()?;
+        std::process::exit(status.code().unwrap_or(1));
+    }
 }

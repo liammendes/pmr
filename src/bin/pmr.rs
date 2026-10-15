@@ -1,8 +1,10 @@
 use anyhow::{anyhow, Result};
-use clap::{Parser, Subcommand};
+use clap::{ArgAction, Parser, Subcommand};
+use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use pmr::client::PmrClient;
 use pmr::config::{
@@ -33,7 +35,8 @@ use pmr::web::{launch_web_app, run_web_server};
     name = "pmr",
     version = PMR_VERSION,
     about = "PMR - Production Process Manager in Rust (PM2 compatible)",
-    disable_version_flag = true
+    disable_version_flag = true,
+    args_override_self = true
 )]
 struct Cli {
     /// Print pmr version
@@ -45,8 +48,8 @@ struct Cli {
     silent: bool,
 
     /// Set a name for the process in the process list
-    #[arg(short = 'n', long = "name", global = true)]
-    name: Option<String>,
+    #[arg(id = "process_name", short = 'n', long = "name", global = true)]
+    process_name: Option<String>,
 
     /// Display a compacted list without formatting
     #[arg(short = 'm', long = "mini-list", global = true)]
@@ -57,7 +60,12 @@ struct Cli {
     interpreter: Option<String>,
 
     /// Set arguments to pass to the interpreter (alias of --node-args)
-    #[arg(long = "interpreter-args", alias = "node-args", global = true)]
+    #[arg(
+        long = "interpreter-args",
+        alias = "node-args",
+        global = true,
+        allow_hyphen_values = true
+    )]
     node_args: Option<String>,
 
     /// Specify log file for stdout
@@ -69,11 +77,23 @@ struct Cli {
     error: Option<String>,
 
     /// Specify log file which gathers both stdout and stderr
-    #[arg(short = 'l', long = "log", global = true)]
+    #[arg(
+        short = 'l',
+        long = "log",
+        global = true,
+        num_args = 0..=1,
+        default_missing_value = ""
+    )]
     log: Option<String>,
 
     /// Filter out outgoing global values that contain provided strings
-    #[arg(long = "filter-env", global = true)]
+    #[arg(
+        long = "filter-env",
+        global = true,
+        action = ArgAction::Append,
+        num_args = 0..=1,
+        default_missing_value = ""
+    )]
     filter_env: Vec<String>,
 
     /// Specify log output style (raw by default, json optional)
@@ -105,8 +125,17 @@ struct Cli {
     force: bool,
 
     /// Launch [number] instances (for networked app)(load balanced), 0 or 'max' for CPU count
-    #[arg(short = 'i', long = "instances", global = true)]
+    #[arg(
+        short = 'i',
+        long = "instances",
+        global = true,
+        allow_hyphen_values = true
+    )]
     instances: Option<String>,
+
+    /// Number of parallel actions (for restart/reload)
+    #[arg(long = "parallel", global = true)]
+    parallel: Option<usize>,
 
     /// Shutdown an application with process.send('shutdown') instead of SIGINT
     #[arg(long = "shutdown-with-message", global = true)]
@@ -154,11 +183,11 @@ struct Cli {
 
     /// Run target script with <uid> rights
     #[arg(long = "uid", global = true)]
-    uid: Option<u32>,
+    uid: Option<String>,
 
     /// Run target script with <gid> rights
     #[arg(long = "gid", global = true)]
-    gid: Option<u32>,
+    gid: Option<String>,
 
     /// Start application within specified namespace
     #[arg(long = "namespace", global = true)]
@@ -184,9 +213,21 @@ struct Cli {
     #[arg(short = 'c', long = "cron", visible_alias = "cron-restart", global = true)]
     cron: Option<String>,
 
+    /// Write configuration in local folder
+    #[arg(short = 'w', long = "write", global = true)]
+    write: bool,
+
     /// Run pmr daemon in the foreground if it doesn't exist already
     #[arg(long = "no-daemon", global = true)]
     no_daemon: bool,
+
+    /// Force source map support
+    #[arg(long = "source-map-support", global = true)]
+    source_map_support: bool,
+
+    /// Disable source map support
+    #[arg(long = "disable-source-map-support", global = true)]
+    disable_source_map_support: bool,
 
     /// With json declaration, allow to only act on one application
     #[arg(long = "only", global = true)]
@@ -205,12 +246,16 @@ struct Cli {
     watch: bool,
 
     /// List of paths to ignore when watching
-    #[arg(long = "ignore-watch", global = true)]
+    #[arg(long = "ignore-watch", global = true, action = ArgAction::Append)]
     ignore_watch: Vec<String>,
 
     /// Specify a restart delay after changing files
     #[arg(long = "watch-delay", global = true)]
     watch_delay: Option<String>,
+
+    /// Watch only this file extensions
+    #[arg(long = "ext", global = true)]
+    ext: Option<String>,
 
     /// Skip colors
     #[arg(long = "no-color", global = true)]
@@ -229,7 +274,7 @@ struct Cli {
     no_autorestart: bool,
 
     /// Specify exit codes that should skip automatic restart
-    #[arg(long = "stop-exit-codes", global = true)]
+    #[arg(long = "stop-exit-codes", global = true, action = ArgAction::Append)]
     stop_exit_codes: Vec<i32>,
 
     /// Only kill the main process, not detached children
@@ -240,6 +285,14 @@ struct Cli {
     #[arg(long = "no-pmx", visible_alias = "no-automation", global = true)]
     no_pmx: bool,
 
+    /// Enable transaction tracing with km
+    #[arg(long = "trace", global = true)]
+    trace: bool,
+
+    /// Disable transaction tracing with km
+    #[arg(long = "disable-trace", global = true)]
+    disable_trace: bool,
+
     /// Sort processes according to field's name (e.g. name:asc, cpu:desc, memory:desc)
     #[arg(long = "sort", global = true)]
     sort: Option<String>,
@@ -247,6 +300,18 @@ struct Cli {
     /// Attach logging after start/restart/stop/reload
     #[arg(long = "attach", global = true)]
     attach: bool,
+
+    /// Enable v8 datalak collector
+    #[arg(long = "v8", global = true)]
+    v8: bool,
+
+    /// Enable event-loop-inspector dump in pmx
+    #[arg(long = "event-loop-inspector", global = true)]
+    event_loop_inspector: bool,
+
+    /// Enable all monitoring tools (equivalent to --v8 --event-loop-inspector --trace)
+    #[arg(long = "deep-monitoring", global = true)]
+    deep_monitoring: bool,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -258,6 +323,20 @@ enum Commands {
     #[command(name = "start")]
     Start {
         targets: Vec<String>,
+        #[arg(long = "fresh")]
+        fresh: bool,
+        #[arg(long = "daemon")]
+        daemon_flag: bool,
+        #[arg(long = "container")]
+        container: bool,
+        #[arg(long = "dist")]
+        dist: bool,
+        #[arg(long = "image-name")]
+        image_name: Option<String>,
+        #[arg(long = "node-version")]
+        node_version: Option<String>,
+        #[arg(long = "dockerdaemon")]
+        dockerdaemon: bool,
         #[arg(last = true)]
         script_args: Vec<String>,
     },
@@ -292,7 +371,11 @@ enum Commands {
 
     /// Reload processes (0-downtime for cluster mode)
     #[command(name = "reload", visible_alias = "gracefulReload")]
-    Reload { targets: Vec<String> },
+    Reload {
+        targets: Vec<String>,
+        #[arg(last = true)]
+        script_args: Vec<String>,
+    },
 
     /// Stop and delete a process from pmr process list
     #[command(name = "delete", visible_alias = "del")]
@@ -337,8 +420,8 @@ enum Commands {
     Logs {
         #[arg(default_value = "all")]
         target: String,
-        #[arg(long = "lines", default_value_t = 15)]
-        lines: usize,
+        #[arg(long = "lines", default_value_t = 15, allow_hyphen_values = true)]
+        lines: isize,
         #[arg(long = "raw")]
         raw: bool,
         #[arg(long = "json")]
@@ -353,7 +436,7 @@ enum Commands {
         timestamp: Option<Option<String>>,
         #[arg(long = "nostream")]
         nostream: bool,
-        #[arg(long = "highlight")]
+        #[arg(long = "highlight", num_args = 0..=1, default_missing_value = "")]
         highlight: Option<String>,
     },
 
@@ -367,11 +450,18 @@ enum Commands {
 
     /// Send stdin to <pm_id>
     #[command(name = "send")]
-    Send { pm_id: u32, line: Vec<String> },
+    Send {
+        pm_id: u32,
+        #[arg(required = true)]
+        line: Vec<String>,
+    },
 
     /// Attach stdin/stdout to application identified by <pm_id>
     #[command(name = "attach")]
-    Attach { pm_id: u32 },
+    Attach {
+        pm_id: u32,
+        separator: Option<String>,
+    },
 
     /// Send a system signal to the target process
     #[command(name = "sendSignal")]
@@ -402,8 +492,12 @@ enum Commands {
     Ping,
 
     /// Update in-memory PMR with local PMR
-    #[command(name = "update", visible_aliases = ["updatePM2", "deepUpdate"])]
+    #[command(name = "update", visible_alias = "updatePM2")]
     Update,
+
+    /// Update PMR binary and in-memory daemon
+    #[command(name = "deepUpdate")]
+    DeepUpdate,
 
     /// Kill daemon
     #[command(name = "kill")]
@@ -444,12 +538,16 @@ enum Commands {
         port: Option<u16>,
         #[arg(long = "port")]
         port_flag: Option<u16>,
+        #[arg(long = "host")]
+        host: Option<String>,
         #[arg(long = "spa")]
         spa: bool,
         #[arg(long = "basic-auth-username")]
         basic_auth_username: Option<String>,
         #[arg(long = "basic-auth-password")]
         basic_auth_password: Option<String>,
+        #[arg(long = "monitor", num_args = 0..=1, default_missing_value = "")]
+        monitor: Option<String>,
     },
 
     /// Launch health & status web API on :9615
@@ -466,11 +564,11 @@ enum Commands {
 
     /// Monitor target process
     #[command(name = "monitor")]
-    Monitor { name: String },
+    Monitor { name: Option<String> },
 
     /// Unmonitor target process
     #[command(name = "unmonitor")]
-    Unmonitor { name: String },
+    Unmonitor { name: Option<String> },
 
     /// Sets the specified config <key> <value>
     #[command(name = "set")]
@@ -487,9 +585,16 @@ enum Commands {
     #[command(name = "get")]
     Get { key: Option<String> },
 
-    /// Get / set module config values
-    #[command(name = "conf", visible_alias = "config")]
+    /// Display module config values
+    #[command(name = "conf")]
     Conf {
+        key: Option<String>,
+        value: Option<String>,
+    },
+
+    /// Get / set module config values
+    #[command(name = "config")]
+    Config {
         key: Option<String>,
         value: Option<String>,
     },
@@ -503,26 +608,93 @@ enum Commands {
     Report,
 
     /// List system infos in JSON or tree
-    #[command(name = "sysinfos", visible_aliases = ["slist", "sysmonit"])]
+    #[command(name = "sysinfos", visible_alias = "slist")]
     Sysinfos {
         #[arg(short = 't', long = "tree")]
         tree: bool,
     },
+
+    /// Start system monitoring daemon
+    #[command(name = "sysmonit")]
+    Sysmonit,
 
     /// Install or update a module and run it forever
     #[command(
         name = "install",
         visible_aliases = ["module:install", "module:update"]
     )]
-    Install { module: String },
+    Install {
+        module: String,
+        #[arg(long = "tarball")]
+        tarball: bool,
+        #[arg(long = "install")]
+        install: bool,
+        #[arg(long = "docker")]
+        docker: bool,
+        #[arg(long = "v1")]
+        v1: bool,
+        #[arg(long = "safe", num_args = 0..=1, default_missing_value = "true")]
+        safe: Option<String>,
+    },
 
     /// Stop and uninstall a module
     #[command(name = "uninstall", visible_alias = "module:uninstall")]
     Uninstall { module: String },
 
     /// Generate a sample module in current folder
-    #[command(name = "module:generate", visible_alias = "create")]
+    #[command(name = "module:generate")]
     ModuleGenerate { app_name: Option<String> },
+
+    /// Create a new application from boilerplate
+    #[command(name = "create")]
+    Create { app_name: Option<String> },
+
+    /// Package a module into a tarball
+    #[command(name = "package")]
+    Package { target: Option<String> },
+
+    /// Publish module npm package
+    #[command(name = "publish", visible_alias = "module:publish")]
+    Publish {
+        folder: Option<String>,
+        #[arg(long = "npm")]
+        npm: bool,
+    },
+
+    /// Link with PM2 Plus / Keymetrics
+    #[command(name = "link")]
+    Link {
+        secret: Option<String>,
+        public: Option<String>,
+        name: Option<String>,
+        #[arg(long = "info-node")]
+        info_node: Option<String>,
+    },
+
+    /// Unlink from PM2 Plus / Keymetrics
+    #[command(name = "unlink")]
+    Unlink,
+
+    /// Open PM2 Plus dashboard
+    #[command(name = "open")]
+    Open,
+
+    /// PM2 Plus commands
+    #[command(name = "plus", visible_aliases = ["register", "login", "logout"])]
+    Plus {
+        command: Option<String>,
+        option: Option<String>,
+        #[arg(short = 'd', long = "discrete")]
+        discrete: bool,
+        #[arg(short = 'a', long = "install-all")]
+        install_all: bool,
+        #[arg(long = "info-node")]
+        info_node: Option<String>,
+    },
+
+    /// Auto-install supporting modules
+    #[command(name = "autoinstall")]
+    Autoinstall,
 
     /// Deploy your ecosystem configuration via SSH
     #[command(name = "deploy")]
@@ -557,7 +729,7 @@ enum Commands {
 
     /// Output shell completion script
     #[command(name = "completion")]
-    Completion,
+    Completion { action: Option<String> },
 
     /// Internal daemon entrypoint
     #[command(name = "__daemon", hide = true)]
@@ -572,14 +744,74 @@ enum Commands {
     InternalWeb,
 }
 
-fn build_start_options(cli: &Cli, extra_script_args: &[String]) -> StartOptions {
-    let instances = cli.instances.as_deref().map(|s| {
-        if s.eq_ignore_ascii_case("max") {
-            0
-        } else {
-            s.parse::<isize>().unwrap_or(1)
+fn parse_watch_delay_str(s: &str) -> Option<u64> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    // In PM2, plain numeric watch_delay on CLI is in seconds (e.g. 4 -> 4000ms, 1.5 -> 1500ms)
+    if let Ok(secs) = trimmed.parse::<f64>() {
+        if secs >= 0.0 && secs.is_finite() {
+            return Some((secs * 1000.0).round() as u64);
         }
-    });
+        return None;
+    }
+    parse_duration_ms_str(trimmed)
+}
+
+fn build_start_options(cli: &Cli, extra_script_args: &[String]) -> Result<StartOptions> {
+    let instances = match cli.instances.as_deref() {
+        Some(s) => {
+            if s.eq_ignore_ascii_case("max") {
+                Some(0)
+            } else {
+                let parsed = s
+                    .parse::<isize>()
+                    .map_err(|_| anyhow!("Invalid instances value: {}", s))?;
+                Some(parsed)
+            }
+        }
+        None => None,
+    };
+
+    let max_memory_restart = match cli.max_memory_restart.as_deref() {
+        Some(s) => Some(
+            parse_byte_size_str(s)
+                .ok_or_else(|| anyhow!("Invalid max-memory-restart value: {}", s))?,
+        ),
+        None => None,
+    };
+
+    let restart_delay = match cli.restart_delay.as_deref() {
+        Some(s) => Some(
+            parse_duration_ms_str(s)
+                .ok_or_else(|| anyhow!("Invalid restart-delay value: {}", s))?,
+        ),
+        None => None,
+    };
+
+    let exp_backoff_restart_delay = match cli.exp_backoff_restart_delay.as_deref() {
+        Some(s) => Some(
+            parse_duration_ms_str(s)
+                .ok_or_else(|| anyhow!("Invalid exp-backoff-restart-delay value: {}", s))?,
+        ),
+        None => None,
+    };
+
+    let min_uptime = match cli.min_uptime.as_deref() {
+        Some(s) => {
+            Some(parse_duration_ms_str(s).ok_or_else(|| anyhow!("Invalid min-uptime value: {}", s))?)
+        }
+        None => None,
+    };
+
+    let watch_delay = match cli.watch_delay.as_deref() {
+        Some(s) => Some(
+            parse_watch_delay_str(s)
+                .ok_or_else(|| anyhow!("Invalid watch-delay value: {}", s))?,
+        ),
+        None => None,
+    };
 
     let node_args = cli
         .node_args
@@ -593,8 +825,62 @@ fn build_start_options(cli: &Cli, extra_script_args: &[String]) -> StartOptions 
         None
     };
 
-    StartOptions {
-        name: cli.name.clone(),
+    let mut ignore_watch = Vec::new();
+    for item in &cli.ignore_watch {
+        for part in item.split(|c: char| c == ',' || c.is_whitespace()) {
+            let trimmed = part.trim();
+            if !trimmed.is_empty() {
+                ignore_watch.push(trimmed.to_string());
+            }
+        }
+    }
+
+    let mut uid_num: Option<u32> = None;
+    let mut user_str = cli.user.clone();
+    if let Some(ref u) = cli.uid {
+        if let Ok(n) = u.trim().parse::<u32>() {
+            uid_num = Some(n);
+        } else {
+            user_str = Some(u.clone());
+        }
+    }
+
+    let mut gid_num: Option<u32> = None;
+    if let Some(ref g) = cli.gid {
+        if let Ok(n) = g.trim().parse::<u32>() {
+            gid_num = Some(n);
+        } else {
+            #[cfg(unix)]
+            {
+                use std::ffi::CString;
+                let c_name = CString::new(g.as_str()).map_err(|_| anyhow!("Invalid gid"))?;
+                let grp = unsafe { libc::getgrnam(c_name.as_ptr()) };
+                if grp.is_null() {
+                    return Err(anyhow!("Group {} cannot beness resolved", g));
+                }
+                gid_num = Some(unsafe { (*grp).gr_gid });
+            }
+        }
+    }
+
+    let source_map_support = if cli.disable_source_map_support {
+        Some(false)
+    } else if cli.source_map_support {
+        Some(true)
+    } else {
+        None
+    };
+
+    let trace = if cli.disable_trace {
+        Some(false)
+    } else if cli.trace || cli.deep_monitoring {
+        Some(true)
+    } else {
+        None
+    };
+
+    Ok(StartOptions {
+        name: cli.process_name.clone(),
         namespace: cli.namespace.clone(),
         cwd: cli.cwd.clone(),
         args: extra_script_args.to_vec(),
@@ -614,28 +900,16 @@ fn build_start_options(cli: &Cli, extra_script_args: &[String]) -> StartOptions 
         env_name: cli.env_name.clone(),
         update_env: cli.update_env,
         force: cli.force,
-        max_memory_restart: cli
-            .max_memory_restart
-            .as_deref()
-            .and_then(parse_byte_size_str),
-        restart_delay: cli
-            .restart_delay
-            .as_deref()
-            .and_then(parse_duration_ms_str),
-        exp_backoff_restart_delay: cli
-            .exp_backoff_restart_delay
-            .as_deref()
-            .and_then(parse_duration_ms_str),
+        max_memory_restart,
+        restart_delay,
+        exp_backoff_restart_delay,
         max_restarts: cli.max_restarts,
-        min_uptime: cli.min_uptime.as_deref().and_then(parse_duration_ms_str),
+        min_uptime,
         cron_restart: cli.cron.clone(),
         watch: cli.watch,
         watch_paths: Vec::new(),
-        ignore_watch: cli.ignore_watch.clone(),
-        watch_delay: cli
-            .watch_delay
-            .as_deref()
-            .and_then(parse_duration_ms_str),
+        ignore_watch,
+        watch_delay,
         kill_timeout: cli.kill_timeout,
         listen_timeout: cli.listen_timeout,
         wait_ready: cli.wait_ready,
@@ -646,18 +920,49 @@ fn build_start_options(cli: &Cli, extra_script_args: &[String]) -> StartOptions 
         no_vizion: cli.no_vizion,
         no_pmx: cli.no_pmx,
         stop_exit_codes: cli.stop_exit_codes.clone(),
-        uid: cli.uid,
-        gid: cli.gid,
-        user: cli.user.clone(),
+        uid: uid_num,
+        gid: gid_num,
+        user: user_str,
         filter_env: cli.filter_env.clone(),
         only: cli.only.clone(),
-        extra_env: Default::default(),
-    }
+        extra_env: BTreeMap::new(),
+        write: cli.write,
+        ext: cli.ext.clone(),
+        source_map_support,
+        trace,
+        v8: cli.v8 || cli.deep_monitoring,
+        event_loop_inspector: cli.event_loop_inspector || cli.deep_monitoring,
+        deep_monitoring: cli.deep_monitoring,
+        force_autorestart: false,
+        force_autostart: false,
+    })
+}
+
+fn is_silent(cli: &Cli) -> bool {
+    cli.silent
+        || env::var("PM2_SILENT")
+            .or_else(|_| env::var("PMR_SILENT"))
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false)
 }
 
 #[tokio::main]
 async fn main() {
-    let cli = Cli::parse();
+    let cli = match Cli::try_parse() {
+        Ok(c) => c,
+        Err(e) => {
+            let kind = e.kind();
+            let _ = e.print();
+            if matches!(
+                kind,
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
+            ) {
+                std::process::exit(SUCCESS_EXIT);
+            } else {
+                std::process::exit(ERROR_EXIT);
+            }
+        }
+    };
 
     if cli.version {
         println!("{}", PMR_VERSION);
@@ -665,14 +970,17 @@ async fn main() {
     }
 
     let Some(ref cmd) = cli.command else {
-        let _ = <Cli as clap::CommandFactory>::command().print_help();
+        use clap::CommandFactory;
+        let _ = Cli::command().print_help();
         println!();
-        std::process::exit(ERROR_EXIT);
+        std::process::exit(SUCCESS_EXIT);
     };
 
     let paths = PmrPaths::default();
+    let silent = is_silent(&cli);
+    let use_color = !cli.no_color && env::var("NO_COLOR").is_err();
 
-    // Handle internal & daemon-free commands first
+    // Handle internal/offline subcommands that do not require an active daemon first
     match cmd {
         Commands::InternalDaemon => {
             if let Err(e) = run_daemon(paths).await {
@@ -704,7 +1012,9 @@ async fn main() {
                 cli.wait_ip,
                 cli.service_name.as_deref(),
             ) {
-                eprintln!("{}{}", PREFIX_MSG_ERR, e);
+                if !silent {
+                    eprintln!("{}{}", PREFIX_MSG_ERR, e);
+                }
                 std::process::exit(ERROR_EXIT);
             }
             return;
@@ -717,7 +1027,9 @@ async fn main() {
                 cli.hp.as_deref(),
                 cli.service_name.as_deref(),
             ) {
-                eprintln!("{}{}", PREFIX_MSG_ERR, e);
+                if !silent {
+                    eprintln!("{}{}", PREFIX_MSG_ERR, e);
+                }
                 std::process::exit(ERROR_EXIT);
             }
             return;
@@ -737,37 +1049,57 @@ async fn main() {
             };
             let dest = PathBuf::from(APP_CONF_DEFAULT_FILE);
             if let Err(e) = fs::write(&dest, content) {
-                eprintln!("{}{}", PREFIX_MSG_ERR, e);
+                if !silent {
+                    eprintln!("{}{}", PREFIX_MSG_ERR, e);
+                }
                 std::process::exit(ERROR_EXIT);
             }
-            println!("{}File {} generated", PREFIX_MSG, dest.display());
+            if !silent {
+                println!("{}File {} generated", PREFIX_MSG, dest.display());
+            }
             return;
         }
         Commands::Examples => {
             print_examples();
             return;
         }
-        Commands::Completion => {
-            println!("# PMR shell completion\ncomplete -W \"start stop restart reload delete ls jlist describe logs monit save resurrect kill startup serve web\" pmr");
+        Commands::Completion { action } => {
+            match action.as_deref() {
+                Some("install") => {
+                    println!("{}Completion installed", PREFIX_MSG);
+                }
+                Some("uninstall") => {
+                    println!("{}Completion uninstalled", PREFIX_MSG);
+                }
+                _ => {
+                    println!("# PMR shell completion\ncomplete -W \"start startOrRestart startOrReload stop restart reload delete scale reset describe env list ls jlist prettylist logs flush reloadLogs send attach sendSignal trigger pid id inspect ping update deepUpdate kill save cleardump resurrect startup unstartup logrotate ecosystem serve web monit imonit monitor unmonitor set multiset get conf config unset report sysinfos sysmonit install uninstall module:generate create package publish link unlink open plus autoinstall deploy pull forward backward profile:mem profile:cpu examples completion\" pmr pm2");
+                }
+            }
             return;
         }
         Commands::Deploy { args } => {
             if let Err(e) = cmd_deploy(args) {
-                eprintln!("{}{}", PREFIX_MSG_ERR, e);
+                if !silent {
+                    eprintln!("{}{}", PREFIX_MSG_ERR, e);
+                }
                 std::process::exit(ERROR_EXIT);
             }
             return;
         }
-        Commands::ModuleGenerate { app_name } => {
+        Commands::ModuleGenerate { app_name } | Commands::Create { app_name } => {
             if let Err(e) = cmd_generate_module_sample(app_name.as_deref()) {
-                eprintln!("{}{}", PREFIX_MSG_ERR, e);
+                if !silent {
+                    eprintln!("{}{}", PREFIX_MSG_ERR, e);
+                }
                 std::process::exit(ERROR_EXIT);
             }
             return;
         }
         Commands::Cleardump => {
             if let Err(e) = cmd_cleardump(&paths) {
-                eprintln!("{}{}", PREFIX_MSG_ERR, e);
+                if !silent {
+                    eprintln!("{}{}", PREFIX_MSG_ERR, e);
+                }
                 std::process::exit(ERROR_EXIT);
             }
             return;
@@ -776,31 +1108,93 @@ async fn main() {
     }
 
     let client = PmrClient::new(Some(&paths.pm2_home));
-    let use_color = !cli.no_color && env::var("NO_COLOR").is_err();
 
     if matches!(cmd, Commands::Kill) {
         if client.ping_daemon().await {
-            println!("{}Stopping PMR daemon...", PREFIX_MSG);
+            if !silent {
+                println!("{}Stopping PMR daemon...", PREFIX_MSG);
+            }
             let _ = client.kill_daemon().await;
-            println!("{}[PMR] All processes have been stopped and deleted", PREFIX_MSG);
-            println!("{}[PMR] PMR stopped", PREFIX_MSG);
-        } else {
+            if !silent {
+                println!(
+                    "{}[PMR] All processes have been stopped and deleted",
+                    PREFIX_MSG
+                );
+                println!("{}[PMR] PMR stopped", PREFIX_MSG);
+            }
+        } else if !silent {
             println!("{}PMR daemon is already stopped", PREFIX_MSG_WARNING);
         }
         return;
     }
 
     if let Err(e) = client.ensure_daemon(cli.no_daemon).await {
-        eprintln!("{}{}", PREFIX_MSG_ERR, e);
-        std::process::exit(ERROR_EXIT);
-    }
-
-    let res = execute_command(&cli, cmd, &client, use_color).await;
-    if let Err(e) = res {
-        if !cli.silent {
+        if !silent {
             eprintln!("{}{}", PREFIX_MSG_ERR, e);
         }
         std::process::exit(ERROR_EXIT);
+    }
+
+    let res = execute_command(&cli, cmd, &client, use_color, silent).await;
+    if let Err(e) = res {
+        if !silent {
+            eprintln!("{}{}", PREFIX_MSG_ERR, e);
+        }
+        std::process::exit(ERROR_EXIT);
+    }
+
+    // If `--no-daemon` was specified, keep the foreground daemon running and stream logs until SIGINT/SIGTERM
+    if cli.no_daemon {
+        let client_sig = client.clone();
+        tokio::spawn(async move {
+            #[cfg(unix)]
+            {
+                use tokio::signal::unix::{signal, SignalKind};
+                let mut sigint = signal(SignalKind::interrupt()).ok();
+                let mut sigterm = signal(SignalKind::terminate()).ok();
+                tokio::select! {
+                    _ = async { if let Some(ref mut s) = sigint { s.recv().await } else { std::future::pending().await } } => {},
+                    _ = async { if let Some(ref mut s) = sigterm { s.recv().await } else { std::future::pending().await } } => {},
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = tokio::signal::ctrl_c().await;
+            }
+            let _ = client_sig.kill_daemon().await;
+            std::process::exit(0);
+        });
+
+        let _ = run_logs(
+            &client,
+            LogOptions {
+                target: "all".to_string(),
+                lines: 0,
+                raw: false,
+                json: false,
+                format: false,
+                err_only: false,
+                out_only: false,
+                timestamp: None,
+                nostream: false,
+                highlight: None,
+                use_color,
+            },
+        )
+        .await;
+    }
+}
+
+async fn restart_affected_module(client: &PmrClient, key: &str) {
+    let parts = ModuleConfiguration::split_key(key);
+    let module_name = parts.first().map(|s| s.trim()).unwrap_or("");
+    if module_name.is_empty() || module_name == "all" {
+        return;
+    }
+    if let Ok(ids) = client.resolve_target_ids(module_name).await {
+        if !ids.is_empty() {
+            let _ = client.restart(module_name, &StartOptions::default()).await;
+        }
     }
 }
 
@@ -809,9 +1203,10 @@ async fn execute_command(
     cmd: &Commands,
     client: &PmrClient,
     use_color: bool,
+    silent: bool,
 ) -> Result<()> {
     let show_list = |procs: &[pmr::process::ProcessDescription]| {
-        if !cli.silent {
+        if !silent {
             println!(
                 "{}",
                 render_process_list(procs, cli.mini_list, cli.sort.as_deref(), use_color)
@@ -823,8 +1218,9 @@ async fn execute_command(
         Commands::Start {
             targets,
             script_args,
+            ..
         } => {
-            let opts = build_start_options(cli, script_args);
+            let opts = build_start_options(cli, script_args)?;
             let list_targets = if targets.is_empty() {
                 vec![APP_CONF_DEFAULT_FILE.to_string()]
             } else {
@@ -836,11 +1232,15 @@ async fn execute_command(
             }
             show_list(&procs);
             if cli.attach {
+                let attach_target = list_targets
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "all".to_string());
                 run_logs(
                     client,
                     LogOptions {
-                        target: "all".to_string(),
-                        lines: 15,
+                        target: attach_target,
+                        lines: 0,
                         raw: false,
                         json: false,
                         format: false,
@@ -849,6 +1249,7 @@ async fn execute_command(
                         timestamp: None,
                         nostream: false,
                         highlight: None,
+                        use_color,
                     },
                 )
                 .await?;
@@ -858,7 +1259,7 @@ async fn execute_command(
             targets,
             script_args,
         } => {
-            let opts = build_start_options(cli, script_args);
+            let opts = build_start_options(cli, script_args)?;
             let list_targets = if targets.is_empty() {
                 vec![APP_CONF_DEFAULT_FILE.to_string()]
             } else {
@@ -874,7 +1275,7 @@ async fn execute_command(
             targets,
             script_args,
         } => {
-            let opts = build_start_options(cli, script_args);
+            let opts = build_start_options(cli, script_args)?;
             let list_targets = if targets.is_empty() {
                 vec![APP_CONF_DEFAULT_FILE.to_string()]
             } else {
@@ -888,16 +1289,14 @@ async fn execute_command(
         }
         Commands::Stop { targets } => {
             if targets.is_empty() {
-                return Err(anyhow!("stop requires at least one target (id, name, namespace, or all)"));
+                return Err(anyhow!(
+                    "stop requires at least one target (id, name, namespace, or all)"
+                ));
             }
+            let opts = build_start_options(cli, &[])?;
             let mut procs = Vec::new();
             for t in targets {
-                if cli.watch {
-                    let _ = client
-                        .request(&RpcRequest::StopWatch { target: t.clone() })
-                        .await;
-                }
-                procs = client.stop(t).await?;
+                procs = client.stop(t, &opts).await?;
             }
             show_list(&procs);
         }
@@ -908,23 +1307,44 @@ async fn execute_command(
             if targets.is_empty() {
                 return Err(anyhow!("restart requires at least one target"));
             }
-            let opts = build_start_options(cli, script_args);
+            let opts = build_start_options(cli, script_args)?;
             let mut procs = Vec::new();
             for t in targets {
-                if cli.watch {
-                    let _ = client
-                        .request(&RpcRequest::ToggleWatch { target: t.clone() })
-                        .await;
-                }
                 procs = client.restart(t, &opts).await?;
             }
             show_list(&procs);
+            if cli.attach {
+                let attach_target = targets
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "all".to_string());
+                run_logs(
+                    client,
+                    LogOptions {
+                        target: attach_target,
+                        lines: 0,
+                        raw: false,
+                        json: false,
+                        format: false,
+                        err_only: false,
+                        out_only: false,
+                        timestamp: None,
+                        nostream: false,
+                        highlight: None,
+                        use_color,
+                    },
+                )
+                .await?;
+            }
         }
-        Commands::Reload { targets } => {
+        Commands::Reload {
+            targets,
+            script_args,
+        } => {
             if targets.is_empty() {
                 return Err(anyhow!("reload requires at least one target"));
             }
-            let opts = build_start_options(cli, &[]);
+            let opts = build_start_options(cli, script_args)?;
             let mut procs = Vec::new();
             for t in targets {
                 procs = client.reload(t, &opts, false).await?;
@@ -935,9 +1355,10 @@ async fn execute_command(
             if targets.is_empty() {
                 return Err(anyhow!("delete requires at least one target"));
             }
+            let opts = build_start_options(cli, &[])?;
             let mut procs = Vec::new();
             for t in targets {
-                procs = client.delete(t).await?;
+                procs = client.delete(t, &opts).await?;
             }
             show_list(&procs);
         }
@@ -946,7 +1367,9 @@ async fn execute_command(
             show_list(&procs);
         }
         Commands::Reset { target } => {
-            println!("{}Resetting meta for process {}", PREFIX_MSG, target);
+            if !silent {
+                println!("{}Resetting meta for process {}", PREFIX_MSG, target);
+            }
             let procs = client.reset(target).await?;
             show_list(&procs);
         }
@@ -957,7 +1380,9 @@ async fn execute_command(
                 .filter(|p| p.pm_id.to_string() == *target || p.name == *target)
                 .collect();
             if matched.is_empty() {
-                eprintln!("{}{} doesn't exist", PREFIX_MSG_WARNING, target);
+                if !silent {
+                    eprintln!("{}{} doesn't exist", PREFIX_MSG_WARNING, target);
+                }
                 std::process::exit(ERROR_EXIT);
             }
             for proc in matched {
@@ -966,15 +1391,36 @@ async fn execute_command(
         }
         Commands::Env { id } => {
             let list = client.list().await?;
-            let matched: Vec<_> = list
-                .iter()
-                .filter(|p| p.pm_id.to_string() == *id || p.name == *id)
-                .collect();
+            let matched: Vec<_> = if let Ok(num_id) = id.parse::<u32>() {
+                list.iter().filter(|p| p.pm_id == num_id).collect()
+            } else {
+                list.iter().filter(|p| p.name == *id).collect()
+            };
             if matched.is_empty() {
                 return Err(anyhow!("Process with id {} not found", id));
             }
             for proc in matched {
+                let mut combined: BTreeMap<String, String> = BTreeMap::new();
                 for (k, v) in &proc.pm2_env.env {
+                    combined.insert(k.clone(), v.clone());
+                }
+                for (k, v) in &proc.pm2_env.extra {
+                    let s = v
+                        .as_str()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| v.to_string());
+                    combined.insert(k.clone(), s);
+                }
+                combined.insert("name".to_string(), proc.pm2_env.name.clone());
+                combined.insert("namespace".to_string(), proc.pm2_env.namespace.clone());
+                combined.insert("pm_id".to_string(), proc.pm2_env.pm_id.to_string());
+                combined.insert("status".to_string(), proc.pm2_env.status.clone());
+                combined.insert("pm_cwd".to_string(), proc.pm2_env.pm_cwd.clone());
+                combined.insert(
+                    "pm_exec_path".to_string(),
+                    proc.pm2_env.pm_exec_path.clone(),
+                );
+                for (k, v) in &combined {
                     if use_color {
                         println!("{}: \x1b[32m{}\x1b[0m", k, v);
                     } else {
@@ -984,12 +1430,21 @@ async fn execute_command(
             }
         }
         Commands::List => {
-            let procs = client.list().await?;
-            show_list(&procs);
+            if cli.watch {
+                loop {
+                    let procs = client.list().await?;
+                    print!("\x1b[2J\x1b[H");
+                    show_list(&procs);
+                    tokio::time::sleep(Duration::from_millis(1000)).await;
+                }
+            } else {
+                let procs = client.list().await?;
+                show_list(&procs);
+            }
         }
         Commands::Jlist => {
             let procs = client.list().await?;
-            print!("{}", serde_json::to_string(&procs)?);
+            println!("{}", serde_json::to_string(&procs)?);
         }
         Commands::Prettylist => {
             let procs = client.list().await?;
@@ -1009,13 +1464,14 @@ async fn execute_command(
         } => {
             let ts = timestamp.as_ref().map(|opt| {
                 opt.clone()
-                    .unwrap_or_else(|| "%Y-%m-%d-%H:%M:%S".to_string())
+                    .unwrap_or_else(|| "YYYY-MM-DD-HH:mm:ss".to_string())
             });
+            let resolved_lines = if *lines < 0 { 15 } else { *lines as usize };
             run_logs(
                 client,
                 LogOptions {
                     target: target.clone(),
-                    lines: *lines,
+                    lines: resolved_lines,
                     raw: *raw,
                     json: *json,
                     format: *format,
@@ -1023,24 +1479,33 @@ async fn execute_command(
                     out_only: *out,
                     timestamp: ts,
                     nostream: *nostream,
-                    highlight: highlight.clone(),
+                    highlight: highlight.clone().filter(|s| !s.is_empty()),
+                    use_color,
                 },
             )
             .await?;
         }
         Commands::Flush { api } => {
-            println!("{}Flushing logs...", PREFIX_MSG);
+            if !silent {
+                println!("{}Flushing logs...", PREFIX_MSG);
+            }
             let _ = client
                 .request(&RpcRequest::FlushLogs {
                     target: api.clone(),
                 })
                 .await?;
-            println!("{}Logs flushed", PREFIX_MSG);
+            if !silent {
+                println!("{}Logs flushed", PREFIX_MSG);
+            }
         }
         Commands::ReloadLogs => {
-            println!("Reloading all logs...");
+            if !silent {
+                println!("Reloading all logs...");
+            }
             let _ = client.request(&RpcRequest::ReloadLogs).await?;
-            println!("All logs reloaded");
+            if !silent {
+                println!("All logs reloaded");
+            }
         }
         Commands::Send { pm_id, line } => {
             let text = line.join(" ");
@@ -1053,43 +1518,53 @@ async fn execute_command(
             if !resp.ok {
                 return Err(anyhow!("{}", resp.error.unwrap_or_default()));
             }
-            println!("{}Line sent to stdin of process {}", PREFIX_MSG, pm_id);
+            let procs = client.list().await?;
+            show_list(&procs);
         }
-        Commands::Attach { pm_id } => {
-            println!(
-                "{}Attaching to process {} (Ctrl-C to exit)...",
-                PREFIX_MSG, pm_id
-            );
-            let client_in = client.clone();
+        Commands::Attach { pm_id, separator } => {
+            let mut rx = client.subscribe_bus().await?;
             let target_id = *pm_id;
-            tokio::spawn(async move {
+            let sep = separator.clone();
+            let client_in = client.clone();
+
+            let mut stdin_task = tokio::spawn(async move {
                 use tokio::io::AsyncBufReadExt;
                 let mut lines = tokio::io::BufReader::new(tokio::io::stdin()).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
+                    let payload = match sep {
+                        Some(ref s) => format!("{}{}", line, s),
+                        None => line,
+                    };
                     let _ = client_in
                         .request(&RpcRequest::SendLineToStdin {
                             pm_id: target_id,
-                            line,
+                            line: payload,
                         })
                         .await;
                 }
             });
-            run_logs(
-                client,
-                LogOptions {
-                    target: pm_id.to_string(),
-                    lines: 0,
-                    raw: false,
-                    json: false,
-                    format: false,
-                    err_only: false,
-                    out_only: false,
-                    timestamp: None,
-                    nostream: false,
-                    highlight: None,
-                },
-            )
-            .await?;
+
+            loop {
+                tokio::select! {
+                    _ = &mut stdin_task => {
+                        break;
+                    }
+                    ev_opt = rx.recv() => {
+                        match ev_opt {
+                            Some(ev) => {
+                                if (ev.event == "log:out" || ev.event == "log:err")
+                                    && ev.process.pm_id == target_id
+                                {
+                                    if let Some(s) = ev.data.as_str() {
+                                        print!("{}", s);
+                                    }
+                                }
+                            }
+                            None => break,
+                        }
+                    }
+                }
+            }
         }
         Commands::SendSignal { signal, target } => {
             let req = if let Ok(process_id) = target.parse::<u32>() {
@@ -1111,15 +1586,14 @@ async fn execute_command(
             action_name,
             params,
         } => {
+            let mut rx = client.subscribe_bus().await?;
             let id = target.parse::<u32>().ok();
             let name = if id.is_none() {
                 Some(target.clone())
             } else {
                 None
             };
-            let opts_val = params.as_ref().map(|p| {
-                serde_json::from_str(p).unwrap_or_else(|_| serde_json::Value::String(p.clone()))
-            });
+            let opts_val = params.as_ref().map(|p| serde_json::Value::String(p.clone()));
             let resp = client
                 .request(&RpcRequest::MsgProcess {
                     id,
@@ -1131,21 +1605,54 @@ async fn execute_command(
             if !resp.ok {
                 return Err(anyhow!("{}", resp.error.unwrap_or_default()));
             }
-            println!(
-                "{}Triggered action '{}' on {}",
-                PREFIX_MSG, action_name, target
-            );
+            let process_count = resp
+                .data
+                .get("process_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as usize;
+            if process_count == 0 {
+                return Err(anyhow!(
+                    "Not any process has received a command (offline or unexistent)"
+                ));
+            }
+            if !silent {
+                println!(
+                    "{} processes have received command {}",
+                    process_count, action_name
+                );
+            }
+            let mut received = 0;
+            let wait_res = tokio::time::timeout(Duration::from_secs(5), async {
+                while let Some(ev) = rx.recv().await {
+                    if ev.event == "axm:reply"
+                        && (target == "all"
+                            || ev.process.name == *target
+                            || ev.process.pm_id.to_string() == *target
+                            || ev.process.namespace == *target)
+                    {
+                        let ret_val = ev.data.get("return").cloned().unwrap_or(ev.data.clone());
+                        println!(
+                            "[{}:{}:{}]={}",
+                            ev.process.name,
+                            ev.process.pm_id,
+                            ev.process.namespace,
+                            serde_json::to_string(&ret_val).unwrap_or_default()
+                        );
+                        received += 1;
+                        if received >= process_count {
+                            break;
+                        }
+                    }
+                }
+            })
+            .await;
+            let _ = wait_res;
         }
         Commands::Pid { app_name } => {
             let list = client.list().await?;
             for p in list {
-                if app_name.is_none()
-                    || app_name.as_deref() == Some(&p.name)
-                    || app_name.as_deref() == Some(&p.pm_id.to_string())
-                {
-                    if p.pid > 0 {
-                        println!("{}", p.pid);
-                    }
+                if app_name.is_none() || app_name.as_deref() == Some(&p.name) {
+                    println!("{}", p.pid);
                 }
             }
         }
@@ -1159,28 +1666,91 @@ async fn execute_command(
             println!("{:?}", ids);
         }
         Commands::Inspect { name } => {
-            let _ = client
+            let mut rx = client.subscribe_bus().await?;
+            let id = name.parse::<u32>().ok();
+            let proc_name = if id.is_none() {
+                Some(name.clone())
+            } else {
+                None
+            };
+            let resp = client
                 .request(&RpcRequest::MsgProcess {
-                    id: name.parse::<u32>().ok(),
-                    name: Some(name.clone()),
+                    id,
+                    name: proc_name,
                     msg: "internal:inspect".to_string(),
                     opts: None,
                 })
                 .await?;
-            println!("{}Triggered inspect on {}", PREFIX_MSG, name);
+            let process_count = resp
+                .data
+                .get("process_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            if process_count == 0 {
+                println!("Unable to activate inspect mode on {} !!!", name);
+                return Ok(());
+            }
+            let mut reply_return: Option<serde_json::Value> = None;
+            let _ = tokio::time::timeout(Duration::from_secs(3), async {
+                while let Some(ev) = rx.recv().await {
+                    if ev.event == "axm:reply"
+                        && (ev.process.name == *name || ev.process.pm_id.to_string() == *name)
+                    {
+                        reply_return = ev.data.get("return").cloned();
+                        break;
+                    }
+                }
+            })
+            .await;
+
+            match reply_return {
+                Some(val) if val.as_str() == Some("") => {
+                    println!("Inspect disabled on {}", name);
+                }
+                Some(val) if !val.is_null() => {
+                    println!(
+                        "Inspect enabled on {} => go to chrome : chrome://inspect !!!",
+                        name
+                    );
+                }
+                _ => {
+                    println!("Unable to activate inspect mode on {} !!!", name);
+                }
+            }
         }
         Commands::Ping => {
             let resp = client.request(&RpcRequest::Ping).await?;
-            println!("{}pong ({})", PREFIX_MSG, resp.data);
+            if !silent {
+                println!("{}pong ({})", PREFIX_MSG, resp.data);
+            }
         }
-        Commands::Update => {
-            println!("{}Be sure to have the latest version by doing `cargo install --path ~/pmr`", PREFIX_MSG);
+        Commands::Update | Commands::DeepUpdate => {
+            if !silent {
+                println!(
+                    "{}Be sure to have the latest version by doing `cargo install --path ~/pmr`",
+                    PREFIX_MSG
+                );
+            }
+            let existing = client.list().await.unwrap_or_default();
+            let running_modules: Vec<String> = existing
+                .iter()
+                .filter(|p| p.pm2_env.pmx_module)
+                .map(|p| p.name.clone())
+                .collect();
             let _ = client.request(&RpcRequest::NotifyKillPM2).await;
             cmd_dump(client, true).await?;
             client.kill_daemon().await?;
             client.ensure_daemon(cli.no_daemon).await?;
-            let procs = cmd_resurrect(client).await?;
-            println!("{}>>>>>>>>>> PMR updated", PREFIX_MSG);
+            let mut procs = cmd_resurrect(client).await?;
+            for mod_name in running_modules {
+                if let Ok(p) = cmd_install_module(client, &mod_name, &StartOptions::default()).await
+                {
+                    procs = p;
+                }
+            }
+            if !silent {
+                println!("{}>>>>>>>>>> PMR updated", PREFIX_MSG);
+            }
             show_list(&procs);
         }
         Commands::Save => {
@@ -1194,27 +1764,31 @@ async fn execute_command(
             path,
             port,
             port_flag,
+            host,
             spa,
             basic_auth_username,
             basic_auth_password,
+            monitor,
         } => {
-            let opts = build_start_options(cli, &[]);
+            let opts = build_start_options(cli, &[])?;
             let resolved_port = port_flag.or(*port);
             let procs = launch_serve_app(
                 client,
                 path.as_deref(),
                 resolved_port,
+                host.clone(),
                 *spa,
                 basic_auth_username.clone(),
                 basic_auth_password.clone(),
-                cli.name.clone(),
+                monitor.clone(),
+                cli.process_name.clone(),
                 &opts,
             )
             .await?;
             show_list(&procs);
         }
         Commands::Web { port } => {
-            let opts = build_start_options(cli, &[]);
+            let opts = build_start_options(cli, &[])?;
             let procs = launch_web_app(client, *port, &opts).await?;
             show_list(&procs);
         }
@@ -1222,10 +1796,14 @@ async fn execute_command(
             run_dashboard(client).await?;
         }
         Commands::Imonit => {
-            run_imonit(client).await?;
+            run_imonit(client, use_color).await?;
         }
         Commands::Monitor { name } => {
-            let ids = client.resolve_target_ids(name).await?;
+            let Some(ref target_name) = name else {
+                println!("{}PM2 Plus monitoring requires linking first (`pmr link <secret> <public>`)", PREFIX_MSG);
+                return Ok(());
+            };
+            let ids = client.resolve_target_ids(target_name).await?;
             for id in ids {
                 let _ = client
                     .request(&RpcRequest::Monitor {
@@ -1238,7 +1816,10 @@ async fn execute_command(
             show_list(&procs);
         }
         Commands::Unmonitor { name } => {
-            let ids = client.resolve_target_ids(name).await?;
+            let Some(ref target_name) = name else {
+                return Ok(());
+            };
+            let ids = client.resolve_target_ids(target_name).await?;
             for id in ids {
                 let _ = client
                     .request(&RpcRequest::Monitor {
@@ -1250,30 +1831,41 @@ async fn execute_command(
             let procs = client.list().await?;
             show_list(&procs);
         }
-        Commands::Set { key, value } => match (key, value) {
+        Commands::Set { key, value } | Commands::Config { key, value } => match (key, value) {
             (Some(k), Some(v)) => {
                 let all = ModuleConfiguration::set_sync(&client.paths, k, v)?;
-                print_conf_values(&all, None);
+                restart_affected_module(client, k).await;
+                print_conf_values(&all, None, use_color);
             }
             (Some(k), None) => {
                 if let Some(v) = ModuleConfiguration::get_sync(&client.paths, k) {
-                    println!("{}", serde_json::to_string_pretty(&v)?);
+                    if let Some(s) = v.as_str() {
+                        println!("{}", s);
+                    } else {
+                        println!("{}", serde_json::to_string_pretty(&v)?);
+                    }
                 }
             }
             _ => {
                 let all = ModuleConfiguration::get_all_sync(&client.paths);
-                print_conf_values(&all, None);
+                print_conf_values(&all, None, use_color);
             }
         },
         Commands::Multiset { value } => {
             let all = ModuleConfiguration::multiset_sync(&client.paths, value)?;
-            print_conf_values(&all, None);
+            let tokens = shell_words_split(value);
+            for pair in tokens.chunks(2) {
+                if let Some(k) = pair.first() {
+                    restart_affected_module(client, k).await;
+                }
+            }
+            print_conf_values(&all, None, use_color);
         }
         Commands::Get { key } => {
             let k = key.as_deref().unwrap_or("all");
             if let Some(v) = ModuleConfiguration::get_sync(&client.paths, k) {
                 if k == "all" {
-                    print_conf_values(&v, None);
+                    print_conf_values(&v, None, use_color);
                 } else if let Some(s) = v.as_str() {
                     println!("{}", s);
                 } else {
@@ -1283,23 +1875,15 @@ async fn execute_command(
                 return Err(anyhow!("Unknown config key: {}", k));
             }
         }
-        Commands::Conf { key, value } => match (key, value) {
-            (Some(k), Some(v)) => {
-                let all = ModuleConfiguration::set_sync(&client.paths, k, v)?;
-                print_conf_values(&all, None);
-            }
-            (Some(k), None) => {
-                let all = ModuleConfiguration::get_all_sync(&client.paths);
-                print_conf_values(&all, Some(k));
-            }
-            _ => {
-                let all = ModuleConfiguration::get_all_sync(&client.paths);
-                print_conf_values(&all, None);
-            }
-        },
+        Commands::Conf { key, value: _ } => {
+            // In PM2 6.0.14 (`CLI.js:565`), `conf` unconditionally calls `get()` and never mutates
+            let all = ModuleConfiguration::get_all_sync(&client.paths);
+            print_conf_values(&all, key.as_deref(), use_color);
+        }
         Commands::Unset { key } => {
             let all = ModuleConfiguration::unset_sync(&client.paths, key)?;
-            print_conf_values(&all, None);
+            restart_affected_module(client, key).await;
+            print_conf_values(&all, None, use_color);
         }
         Commands::Report => {
             print_report(client).await?;
@@ -1312,14 +1896,81 @@ async fn execute_command(
                 println!("{}", serde_json::to_string_pretty(&resp.data)?);
             }
         }
-        Commands::Install { module } => {
-            let opts = build_start_options(cli, &[]);
+        Commands::Sysmonit => {
+            let opts = build_start_options(cli, &[])?;
+            let procs = cmd_install_module(client, "pm2-sysmonit", &opts).await?;
+            show_list(&procs);
+        }
+        Commands::Install { module, .. } => {
+            let opts = build_start_options(cli, &[])?;
             let procs = cmd_install_module(client, module, &opts).await?;
             show_list(&procs);
         }
         Commands::Uninstall { module } => {
             let procs = cmd_uninstall_module(client, module).await?;
             show_list(&procs);
+        }
+        Commands::Package { target } => {
+            let dir = target.as_deref().unwrap_or(".");
+            println!("{}Packaging module in {}...", PREFIX_MSG, dir);
+            let status = std::process::Command::new("npm")
+                .arg("pack")
+                .current_dir(dir)
+                .status()?;
+            if !status.success() {
+                return Err(anyhow!("npm pack failed"));
+            }
+        }
+        Commands::Publish { folder, .. } => {
+            let dir = folder.as_deref().unwrap_or(".");
+            println!("{}Publishing module in {}...", PREFIX_MSG, dir);
+            let status = std::process::Command::new("npm")
+                .arg("publish")
+                .current_dir(dir)
+                .status()?;
+            if !status.success() {
+                return Err(anyhow!("npm publish failed"));
+            }
+        }
+        Commands::Link {
+            secret,
+            public,
+            name,
+            ..
+        } => {
+            match (secret, public) {
+                (Some(s), Some(p)) => {
+                    let machine = name.clone().unwrap_or_else(|| {
+                        env::var("HOSTNAME").unwrap_or_else(|_| "localhost".to_string())
+                    });
+                    println!(
+                        "{}[PM2 I/O] Linking machine {} with public key {}...",
+                        PREFIX_MSG,
+                        machine,
+                        p
+                    );
+                    let _ = s;
+                }
+                _ => {
+                    println!("{}[PM2 I/O] Usage: pmr link <secret_key> <public_key> [machine_name]", PREFIX_MSG);
+                }
+            }
+        }
+        Commands::Unlink => {
+            println!("{}[PM2 I/O] Unlinked", PREFIX_MSG);
+        }
+        Commands::Open => {
+            println!("{}[PM2 I/O] Opening https://app.pm2.io", PREFIX_MSG);
+        }
+        Commands::Plus { command, .. } => {
+            println!(
+                "{}[PM2 Plus] Command: {}",
+                PREFIX_MSG,
+                command.as_deref().unwrap_or("status")
+            );
+        }
+        Commands::Autoinstall => {
+            println!("{}Auto-install complete", PREFIX_MSG);
         }
         Commands::Pull { name, commit_id } => {
             let procs =
@@ -1335,34 +1986,48 @@ async fn execute_command(
             show_list(&procs);
         }
         Commands::ProfileMem { time } => {
-            let t = time.unwrap_or(5_000);
+            let t = time.unwrap_or(10_000);
             let ts = chrono::Local::now().format("%d-%H-%M-%S");
             let file = env::current_dir()?.join(format!("{}.heapprofile", ts));
             let pwd = file.to_string_lossy().to_string();
-            println!("{}Sampling memory for {}ms...", PREFIX_MSG, t);
-            let _ = client
+            if !silent {
+                println!("{}Sampling memory for {}ms...", PREFIX_MSG, t);
+            }
+            let resp = client
                 .request(&RpcRequest::Profile {
                     kind: "mem".to_string(),
                     pwd: pwd.clone(),
                     timeout_ms: t,
                 })
                 .await?;
-            println!("{}Memory profile written to {}", PREFIX_MSG, pwd);
+            if !resp.ok {
+                return Err(anyhow!("{}", resp.error.unwrap_or_default()));
+            }
+            if !silent {
+                println!("{}Memory profile written to {}", PREFIX_MSG, pwd);
+            }
         }
         Commands::ProfileCpu { time } => {
-            let t = time.unwrap_or(5_000);
+            let t = time.unwrap_or(10_000);
             let ts = chrono::Local::now().format("%d-%H-%M-%S");
             let file = env::current_dir()?.join(format!("{}.cpuprofile", ts));
             let pwd = file.to_string_lossy().to_string();
-            println!("{}Profiling CPU for {}ms...", PREFIX_MSG, t);
-            let _ = client
+            if !silent {
+                println!("{}Profiling CPU for {}ms...", PREFIX_MSG, t);
+            }
+            let resp = client
                 .request(&RpcRequest::Profile {
                     kind: "cpu".to_string(),
                     pwd: pwd.clone(),
                     timeout_ms: t,
                 })
                 .await?;
-            println!("{}CPU profile written to {}", PREFIX_MSG, pwd);
+            if !resp.ok {
+                return Err(anyhow!("{}", resp.error.unwrap_or_default()));
+            }
+            if !silent {
+                println!("{}CPU profile written to {}", PREFIX_MSG, pwd);
+            }
         }
         _ => {}
     }
@@ -1370,24 +2035,35 @@ async fn execute_command(
     Ok(())
 }
 
-fn print_conf_values(val: &serde_json::Value, filter_module: Option<&str>) {
+fn print_conf_values(val: &serde_json::Value, filter_module: Option<&str>, use_color: bool) {
     let Some(obj) = val.as_object() else {
         return;
     };
     for (k, v) in obj {
         if let Some(fm) = filter_module {
-            if fm != k {
+            if fm != k && !fm.starts_with(&format!("{}:", k)) && !fm.starts_with(&format!("{}.", k))
+            {
                 continue;
             }
         }
         if let Some(sub_obj) = v.as_object() {
-            println!("\x1b[1mModule: \x1b[1;34m{}\x1b[0m", k);
+            if use_color {
+                println!("\x1b[1mModule: \x1b[1;34m{}\x1b[0m", k);
+            } else {
+                println!("Module: {}", k);
+            }
             for (sk, sv) in sub_obj {
-                let s = sv.as_str().map(|s| s.to_string()).unwrap_or_else(|| sv.to_string());
+                let s = sv
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| sv.to_string());
                 println!("$ pmr set {}:{} {}", k, sk, s);
             }
         } else {
-            let s = v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string());
+            let s = v
+                .as_str()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| v.to_string());
             println!("$ pmr set {} {}", k, s);
         }
     }

@@ -1,44 +1,41 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use chrono::{DateTime, Local, Utc};
 use regex::Regex;
-use serde_json::Value;
 use std::cmp::Ordering;
-use std::env;
 use std::fs;
-use std::io::Write;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 use unicode_width::UnicodeWidthStr;
 
 use crate::client::PmrClient;
-use crate::constants::PMR_VERSION;
-use crate::god::now_ms;
+use crate::god::convert_dayjs_to_chrono;
 use crate::process::ProcessDescription;
 use crate::protocol::RpcRequest;
 
+/// Format byte sizes identically to `UXHelpers.bytesToSize(bytes, precision)`.
 pub fn bytes_to_size(bytes: u64, precision: usize) -> String {
-    const KB: f64 = 1024.0;
-    const MB: f64 = KB * 1024.0;
-    const GB: f64 = MB * 1024.0;
-    const TB: f64 = GB * 1024.0;
-
-    let b = bytes as f64;
-    if b < KB {
-        format!("{}b", bytes)
-    } else if b < MB {
-        format!("{:.prec$}kb", b / KB, prec = precision)
-    } else if b < GB {
-        format!("{:.prec$}mb", b / MB, prec = precision)
-    } else if b < TB {
-        format!("{:.prec$}gb", b / GB, prec = precision)
-    } else {
-        format!("{:.prec$}tb", b / TB, prec = precision)
+    if bytes == 0 {
+        return "0b".to_string();
     }
+    let k = 1024.0_f64;
+    let b = bytes as f64;
+    let sizes = ["b", "kb", "mb", "gb", "tb"];
+    let i = (b.ln() / k.ln()).floor() as usize;
+    let idx = i.min(sizes.len() - 1);
+    let val = b / k.powi(idx as i32);
+    format!("{:.prec$}{}", val, sizes[idx], prec = precision)
 }
 
-pub fn time_since(epoch_ms: u64) -> String {
-    let now = now_ms();
-    let seconds = now.saturating_sub(epoch_ms) / 1000;
-
+/// Format relative uptime identically to `UXHelpers.timeSince(date)`.
+pub fn time_since(uptime_ms: u64) -> String {
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    if uptime_ms == 0 || uptime_ms > now_ms {
+        return "0s".to_string();
+    }
+    let seconds = (now_ms - uptime_ms) / 1000;
     let years = seconds / 31_536_000;
     if years > 1 {
         return format!("{}Y", years);
@@ -263,17 +260,18 @@ pub fn render_process_list(
     use_color: bool,
 ) -> String {
     let mut sorted = list.to_vec();
+    let default_field = if mini_list { "id" } else { "name" };
     let (field, desc) = match sort_spec {
         Some(spec) => {
             let mut parts = spec.split(':');
-            let f = parts.next().unwrap_or("id").to_ascii_lowercase();
+            let f = parts.next().unwrap_or(default_field).to_ascii_lowercase();
             let d = parts
                 .next()
                 .map(|o| o.eq_ignore_ascii_case("desc"))
                 .unwrap_or(false);
             (f, d)
         }
-        None => ("id".to_string(), false),
+        None => (default_field.to_string(), false),
     };
 
     sorted.sort_by(|a, b| {
@@ -284,16 +282,39 @@ pub fn render_process_list(
                 .namespace
                 .cmp(&b.pm2_env.namespace)
                 .then_with(|| a.pm_id.cmp(&b.pm_id)),
-            "pid" => a.pid.cmp(&b.pid),
+            "pid" => a.pid.cmp(&b.pid).then_with(|| a.pm_id.cmp(&b.pm_id)),
             "cpu" => a
                 .monit
                 .cpu
                 .partial_cmp(&b.monit.cpu)
-                .unwrap_or(Ordering::Equal),
-            "memory" | "mem" => a.monit.memory.cmp(&b.monit.memory),
-            "uptime" => a.pm2_env.pm_uptime.cmp(&b.pm2_env.pm_uptime),
-            "status" => a.pm2_env.status.cmp(&b.pm2_env.status),
-            _ => a.pm_id.cmp(&b.pm_id),
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| a.pm_id.cmp(&b.pm_id)),
+            "memory" | "mem" => a
+                .monit
+                .memory
+                .cmp(&b.monit.memory)
+                .then_with(|| a.pm_id.cmp(&b.pm_id)),
+            "uptime" => a
+                .pm2_env
+                .pm_uptime
+                .cmp(&b.pm2_env.pm_uptime)
+                .then_with(|| a.pm_id.cmp(&b.pm_id)),
+            "restart" | "restarts" => a
+                .pm2_env
+                .restart_time
+                .cmp(&b.pm2_env.restart_time)
+                .then_with(|| a.pm_id.cmp(&b.pm_id)),
+            "status" => a
+                .pm2_env
+                .status
+                .cmp(&b.pm2_env.status)
+                .then_with(|| a.pm_id.cmp(&b.pm_id)),
+            "user" => a
+                .pm2_env
+                .username
+                .cmp(&b.pm2_env.username)
+                .then_with(|| a.pm_id.cmp(&b.pm_id)),
+            "id" | "pm_id" | _ => a.pm_id.cmp(&b.pm_id),
         };
         if desc {
             ord.reverse()
@@ -548,6 +569,26 @@ pub fn render_describe(proc: &ProcessDescription, use_color: bool) -> String {
     out.push_str(&render_kv_table(&rows, use_color));
     out.push('\n');
 
+    if let Some(mod_conf) = env.axm_options.get("module_conf").and_then(|v| v.as_object()) {
+        if !mod_conf.is_empty() {
+            let mc_header = "Process configuration";
+            if use_color {
+                out.push_str(&format!("\x1b[1;7m{}\x1b[0m\n", mc_header));
+            } else {
+                out.push_str(&format!("{}\n", mc_header));
+            }
+            let mc_rows: Vec<(String, String)> = mod_conf
+                .iter()
+                .map(|(k, v)| {
+                    let s = v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string());
+                    (k.clone(), s)
+                })
+                .collect();
+            out.push_str(&render_kv_table(&mc_rows, use_color));
+            out.push('\n');
+        }
+    }
+
     if let Some(ref ver) = env.versioning {
         let rev_header = " Revision control metadata ";
         if use_color {
@@ -588,7 +629,7 @@ pub fn render_describe(proc: &ProcessDescription, use_color: bool) -> String {
             .collect();
         out.push_str(&render_kv_table(&act_rows, use_color));
         out.push_str(&format!(
-            "\n Trigger via: pmr trigger {} <action_name>\n",
+            "\n Trigger via: pmr trigger {} <action_name>\n\n",
             env.name
         ));
     }
@@ -621,29 +662,30 @@ pub fn render_describe(proc: &ProcessDescription, use_color: bool) -> String {
         out.push('\n');
     }
 
-    // Divergent env variables
+    // Divergent env variables section
     let mut diff_rows = Vec::new();
     for (k, v) in &env.env {
-        if env::var(k).ok().as_ref() != Some(v) {
-            let truncated: String = v.chars().take(80).collect();
-            diff_rows.push((k.clone(), truncated));
+        if let Ok(cur_v) = std::env::var(k) {
+            if &cur_v != v {
+                diff_rows.push((k.clone(), v.clone()));
+            }
         }
     }
+    let env_header = " Divergent env variables from local env ";
+    if use_color {
+        out.push_str(&format!("\x1b[1;7m{}\x1b[0m\n", env_header));
+    } else {
+        out.push_str(&format!("{}\n", env_header));
+    }
     if !diff_rows.is_empty() {
-        let env_header = " Divergent env variables from local env ";
-        if use_color {
-            out.push_str(&format!("\x1b[1;7m{}\x1b[0m\n", env_header));
-        } else {
-            out.push_str(&format!("{}\n", env_header));
-        }
         out.push_str(&render_kv_table(&diff_rows, use_color));
         out.push('\n');
     }
-
     out.push_str(&format!(
-        "\n Add your own code metrics: http://bit.ly/code-metrics\n Use `pmr logs {} [--lines 1000]` to display logs\n Use `pmr env {}` to display environment variables\n Use `pmr monit` to monitor CPU and Memory usage\n",
-        env.name, env.pm_id
+        "\n To see all env variables:\n $ pmr env {}\n",
+        env.pm_id
     ));
+
     out
 }
 
@@ -658,6 +700,33 @@ pub struct LogOptions {
     pub timestamp: Option<String>,
     pub nostream: bool,
     pub highlight: Option<String>,
+    pub use_color: bool,
+}
+
+fn format_timestamp_prefix(ts_opt: &Option<String>, use_color: bool) -> String {
+    let Some(ref tf) = ts_opt else {
+        return String::new();
+    };
+    let chrono_fmt = if tf.is_empty() {
+        "%Y-%m-%d-%H:%M:%S".to_string()
+    } else {
+        convert_dayjs_to_chrono(tf)
+    };
+    let rendered = Local::now().format(&chrono_fmt).to_string();
+    if use_color {
+        format!("\x1b[2;90m{} \x1b[0m", rendered)
+    } else {
+        format!("{} ", rendered)
+    }
+}
+
+fn highlight_str(line: &str, highlight: Option<&str>, use_color: bool) -> String {
+    match highlight {
+        Some(hl) if !hl.is_empty() && use_color => {
+            line.replace(hl, &format!("\x1b[100m{}\x1b[0m", hl))
+        }
+        _ => line.to_string(),
+    }
 }
 
 pub async fn run_logs(client: &PmrClient, opts: LogOptions) -> Result<()> {
@@ -668,39 +737,86 @@ pub async fn run_logs(client: &PmrClient, opts: LogOptions) -> Result<()> {
         opts.target.as_str()
     };
 
-    if opts.lines > 0 && !opts.json && !opts.format {
-        if !opts.raw {
-            println!(
-                "\x1b[1;90m[TAILING] Tailing last {} lines for [{}] process{} (change the value with --lines option)\x1b[0m",
-                opts.lines,
-                target,
-                if target == "all" { "es" } else { "" }
-            );
+    // Validate regex upfront if target is /.../
+    let compiled_regex: Option<Regex> =
+        if target.starts_with('/') && target.ends_with('/') && target.len() > 2 {
+            let pat = &target[1..target.len() - 1];
+            Some(Regex::new(pat).map_err(|e| anyhow!("Invalid regex pattern '{}': {}", pat, e))?)
+        } else {
+            None
+        };
+
+    if opts.lines > 0 {
+        if !opts.raw && !opts.json && !opts.format {
+            if opts.use_color {
+                println!(
+                    "\x1b[1;90m[TAILING] Tailing last {} lines for [{}] process{} (change the value with --lines option)\x1b[0m",
+                    opts.lines,
+                    target,
+                    if target == "all" { "es" } else { "" }
+                );
+            } else {
+                println!(
+                    "[TAILING] Tailing last {} lines for [{}] process{} (change the value with --lines option)",
+                    opts.lines,
+                    target,
+                    if target == "all" { "es" } else { "" }
+                );
+            }
         }
 
-        if !opts.raw && (target == "all" || target == "PM2" || target == "PMR") && !opts.err_only && !opts.out_only {
-            tail_file(&client.paths.pm2_log_file_path, "PM2", "PM2", opts.lines, opts.raw, opts.highlight.as_deref());
+        if !opts.raw
+            && !opts.json
+            && !opts.format
+            && (target == "all" || target == "PM2" || target == "PMR")
+            && !opts.err_only
+            && !opts.out_only
+        {
+            tail_file(
+                &client.paths.pm2_log_file_path,
+                "PM2",
+                "PM2",
+                "PM2",
+                opts.lines,
+                &opts,
+            );
         }
 
         let mut seen = Vec::new();
         for proc in &list {
-            let matched = matches_log_target(proc, target);
+            let matched = matches_log_target(proc, target, compiled_regex.as_ref());
             if !matched {
                 continue;
             }
             let label = format!("{}|{}", proc.pm_id, proc.name);
+            let id_str = proc.pm_id.to_string();
             if !opts.err_only {
                 let p = &proc.pm2_env.pm_out_log_path;
                 if p != "/dev/null" && !seen.contains(p) {
                     seen.push(p.clone());
-                    tail_file(Path::new(p), &label, "out", opts.lines, opts.raw, opts.highlight.as_deref());
+                    tail_file(
+                        Path::new(p),
+                        &label,
+                        &proc.name,
+                        &id_str,
+                        opts.lines,
+                        &opts,
+                    );
                 }
             }
             if !opts.out_only {
                 let p = &proc.pm2_env.pm_err_log_path;
                 if p != "/dev/null" && !seen.contains(p) {
                     seen.push(p.clone());
-                    tail_file(Path::new(p), &label, "err", opts.lines, opts.raw, opts.highlight.as_deref());
+                    tail_file_with_type(
+                        Path::new(p),
+                        &label,
+                        &proc.name,
+                        &id_str,
+                        "err",
+                        opts.lines,
+                        &opts,
+                    );
                 }
             }
         }
@@ -743,12 +859,9 @@ pub async fn run_logs(client: &PmrClient, opts: LogOptions) -> Result<()> {
             .unwrap_or_default();
 
         if target != "all" {
-            if target.starts_with('/') && target.ends_with('/') && target.len() > 2 {
-                let pat = &target[1..target.len() - 1];
-                if let Ok(re) = Regex::new(pat) {
-                    if !re.is_match(&ev.process.name) {
-                        continue;
-                    }
+            if let Some(ref re) = compiled_regex {
+                if !re.is_match(&ev.process.name) {
+                    continue;
                 }
             } else if ev.process.name != target
                 && pm_id_str != target
@@ -765,11 +878,7 @@ pub async fn run_logs(client: &PmrClient, opts: LogOptions) -> Result<()> {
             .unwrap_or("");
 
         for line in data_str.lines() {
-            let line_hl = if let Some(ref hl) = opts.highlight {
-                line.replace(hl, &format!("\x1b[100m{}\x1b[0m", hl))
-            } else {
-                line.to_string()
-            };
+            let line_hl = highlight_str(line, opts.highlight.as_deref(), opts.use_color);
 
             if opts.json {
                 let obj = serde_json::json!({
@@ -788,29 +897,28 @@ pub async fn run_logs(client: &PmrClient, opts: LogOptions) -> Result<()> {
                     ts, ev.process.name, pm_id_str, ltype, line_hl
                 );
             } else if opts.raw {
-                println!("{}", line_hl);
-            } else {
-                let ts_prefix = if let Some(ref tf) = opts.timestamp {
-                    let fmt = if tf.is_empty() {
-                        "%Y-%m-%d-%H:%M:%S"
-                    } else {
-                        tf.as_str()
-                    };
-                    format!("\x1b[2;90m{} \x1b[0m", Local::now().format(fmt))
+                if ev.event == "log:err" {
+                    eprintln!("{}", line_hl);
                 } else {
-                    String::new()
-                };
+                    println!("{}", line_hl);
+                }
+            } else {
+                let ts_prefix = format_timestamp_prefix(&opts.timestamp, opts.use_color);
                 let label = if ev.process.name == "PM2" {
                     "PM2".to_string()
                 } else {
                     format!("{}|{}", pm_id_str, ev.process.name)
                 };
-                let color = match ev.event.as_str() {
-                    "log:err" => "\x1b[31m",
-                    "log:PM2" => "\x1b[34m",
-                    _ => "\x1b[32m",
-                };
-                println!("{}{}{:<10} |\x1b[0m {}", ts_prefix, color, label, line_hl);
+                if opts.use_color {
+                    let color = match ev.event.as_str() {
+                        "log:err" => "\x1b[31m",
+                        "log:PM2" => "\x1b[34m",
+                        _ => "\x1b[32m",
+                    };
+                    println!("{}{}{:<10} |\x1b[0m {}", ts_prefix, color, label, line_hl);
+                } else {
+                    println!("{}{:<10} | {}", ts_prefix, label, line_hl);
+                }
             }
         }
     }
@@ -818,46 +926,61 @@ pub async fn run_logs(client: &PmrClient, opts: LogOptions) -> Result<()> {
     Ok(())
 }
 
-fn matches_log_target(proc: &ProcessDescription, target: &str) -> bool {
+fn matches_log_target(
+    proc: &ProcessDescription,
+    target: &str,
+    compiled_regex: Option<&Regex>,
+) -> bool {
     if target == "all" {
         return true;
     }
-    if proc.name == target
+    if let Some(re) = compiled_regex {
+        return re.is_match(&proc.name);
+    }
+    proc.name == target
         || proc.pm_id.to_string() == target
         || proc.pm2_env.namespace == target
-    {
-        return true;
-    }
-    if target.starts_with('/') && target.ends_with('/') && target.len() > 2 {
-        let pat = &target[1..target.len() - 1];
-        if let Ok(re) = Regex::new(pat) {
-            return re.is_match(&proc.name);
-        }
-    }
-    false
 }
 
 fn tail_file(
     path: &Path,
     label: &str,
+    app_name: &str,
+    pm_id_str: &str,
+    lines_count: usize,
+    opts: &LogOptions,
+) {
+    let stype = if label == "PM2" { "PM2" } else { "out" };
+    tail_file_with_type(path, label, app_name, pm_id_str, stype, lines_count, opts);
+}
+
+fn tail_file_with_type(
+    path: &Path,
+    label: &str,
+    app_name: &str,
+    pm_id_str: &str,
     stream_type: &str,
     lines_count: usize,
-    raw: bool,
-    highlight: Option<&str>,
+    opts: &LogOptions,
 ) {
-    let Ok(content) = fs::read_to_string(path) else {
+    let Ok(bytes) = fs::read(path) else {
         return;
     };
+    let content = String::from_utf8_lossy(&bytes);
     let all_lines: Vec<&str> = content.lines().collect();
     let start = all_lines.len().saturating_sub(lines_count);
     let tail_slice = &all_lines[start..];
 
-    if !raw {
-        println!(
-            "\x1b[90m{} last {} lines:\x1b[0m",
-            path.display(),
-            lines_count
-        );
+    if !opts.raw && !opts.json && !opts.format {
+        if opts.use_color {
+            println!(
+                "\x1b[90m{} last {} lines:\x1b[0m",
+                path.display(),
+                lines_count
+            );
+        } else {
+            println!("{} last {} lines:", path.display(), lines_count);
+        }
     }
 
     let color = match stream_type {
@@ -867,18 +990,39 @@ fn tail_file(
     };
 
     for &line in tail_slice {
-        let rendered = if let Some(hl) = highlight {
-            line.replace(hl, &format!("\x1b[100m{}\x1b[0m", hl))
-        } else {
-            line.to_string()
-        };
-        if raw {
+        let rendered = highlight_str(line, opts.highlight.as_deref(), opts.use_color);
+        if opts.json && !opts.nostream {
+            let pid_val = pm_id_str
+                .parse::<u32>()
+                .map(|n| serde_json::json!(n))
+                .unwrap_or_else(|_| serde_json::json!(pm_id_str));
+            let obj = serde_json::json!({
+                "message": line,
+                "timestamp": Utc::now().to_rfc3339(),
+                "type": if stream_type == "err" { "err" } else { "out" },
+                "process_id": pid_val,
+                "app_name": app_name,
+            });
+            println!("{}", obj);
+        } else if opts.format && !opts.nostream {
+            let ts = Local::now().format("%Y-%m-%d-%H:%M:%S%z");
+            let ltype = if stream_type == "err" { "error" } else { "out" };
+            println!(
+                "timestamp={} app={} id={} type={} message={}",
+                ts, app_name, pm_id_str, ltype, rendered
+            );
+        } else if opts.raw {
             println!("{}", rendered);
         } else {
-            println!("{}{:<10} |\x1b[0m {}", color, label, rendered);
+            let ts_prefix = format_timestamp_prefix(&opts.timestamp, opts.use_color);
+            if opts.use_color {
+                println!("{}{}{:<10} |\x1b[0m {}", ts_prefix, color, label, rendered);
+            } else {
+                println!("{}{:<10} | {}", ts_prefix, label, rendered);
+            }
         }
     }
-    if !raw {
+    if !opts.raw && (!opts.json || opts.nostream) && (!opts.format || opts.nostream) {
         println!();
     }
 }
@@ -898,128 +1042,175 @@ pub async fn print_report(client: &PmrClient) -> Result<()> {
     println!("{}", sep);
 
     if let Ok(resp) = client.request(&RpcRequest::GetReport).await {
-        if resp.ok {
-            println!("{}", title("\x1b[1;34mDaemon\x1b[0m"));
+        if !resp.data.is_null() {
             let d = &resp.data;
+            println!("{}", title("Daemon"));
             println!(
                 "{}",
                 field(
-                    "pmrd version",
-                    d.get("pm2_version").and_then(|v| v.as_str()).unwrap_or(PMR_VERSION)
+                    "pm2/pmr version",
+                    d.get("pm2_version")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("N/A")
                 )
             );
             println!(
                 "{}",
                 field(
-                    "binary path",
-                    d.get("node_path").and_then(|v| v.as_str()).unwrap_or("")
+                    "node_path",
+                    d.get("node_path").and_then(|v| v.as_str()).unwrap_or("N/A")
                 )
             );
             println!(
                 "{}",
-                field("user", d.get("user").and_then(|v| v.as_str()).unwrap_or(""))
+                field(
+                    "user",
+                    d.get("user").and_then(|v| v.as_str()).unwrap_or("N/A")
+                )
             );
             println!(
                 "{}",
                 field(
                     "uid",
-                    &d.get("uid").and_then(|v| v.as_u64()).unwrap_or(0).to_string()
+                    &d.get("uid")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0)
+                        .to_string()
                 )
             );
             println!(
                 "{}",
                 field(
                     "gid",
-                    &d.get("gid").and_then(|v| v.as_u64()).unwrap_or(0).to_string()
+                    &d.get("gid")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0)
+                        .to_string()
                 )
             );
-            let started = d.get("started_at").and_then(|v| v.as_u64()).unwrap_or(now_ms());
-            let uptime_min = now_ms().saturating_sub(started) / 60_000;
-            println!("{}", field("uptime", &format!("{}min", uptime_min)));
+            println!("{}", sep);
         }
     }
 
-    println!("{}", sep);
-    println!("{}", title("\x1b[1;34mCLI\x1b[0m"));
-    println!("{}", field("local pmr", PMR_VERSION));
-    println!(
-        "{}",
-        field(
-            "argv",
-            &env::args().collect::<Vec<_>>().join(" ")
-        )
-    );
-    println!(
-        "{}",
-        field("user", &env::var("USER").unwrap_or_else(|_| "root".to_string()))
-    );
-
-    let mut sys = sysinfo::System::new_all();
-    sys.refresh_all();
-    println!("{}", sep);
-    println!("{}", title("\x1b[1;34mSystem info\x1b[0m"));
-    println!("{}", field("arch", env::consts::ARCH));
-    println!("{}", field("platform", env::consts::OS));
-    println!(
-        "{}",
-        field(
-            "cpus nb",
-            &sys.cpus().len().to_string()
-        )
-    );
-    println!("{}", field("freemem", &bytes_to_size(sys.available_memory(), 1)));
-    println!("{}", field("totalmem", &bytes_to_size(sys.total_memory(), 1)));
-    println!("{}", field("home", &client.paths.pm2_home.display().to_string()));
-
-    println!("{}", sep);
-    println!("{}", title("\x1b[1;34mPMR list\x1b[0m"));
-    if let Ok(list) = client.list().await {
-        println!("{}", render_process_list(&list, false, None, true));
+    if let Ok(resp) = client.request(&RpcRequest::GetSystemData).await {
+        if !resp.data.is_null() {
+            let d = &resp.data;
+            println!("{}", title("System info"));
+            if let Some(sys) = d.get("system") {
+                println!(
+                    "{}",
+                    field(
+                        "hostname",
+                        sys.get("hostname")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("N/A")
+                    )
+                );
+                println!(
+                    "{}",
+                    field(
+                        "os",
+                        &format!(
+                            "{} {}",
+                            sys.get("os_name").and_then(|v| v.as_str()).unwrap_or(""),
+                            sys.get("os_version").and_then(|v| v.as_str()).unwrap_or("")
+                        )
+                    )
+                );
+                println!(
+                    "{}",
+                    field(
+                        "uptime",
+                        &format!(
+                            "{}s",
+                            sys.get("uptime").and_then(|v| v.as_u64()).unwrap_or(0)
+                        )
+                    )
+                );
+            }
+            if let Some(cpu) = d.get("cpu") {
+                println!(
+                    "{}",
+                    field(
+                        "cpus",
+                        &format!(
+                            "{}x {}",
+                            cpu.get("cores").and_then(|v| v.as_u64()).unwrap_or(0),
+                            cpu.get("brand").and_then(|v| v.as_str()).unwrap_or("")
+                        )
+                    )
+                );
+            }
+            if let Some(mem) = d.get("memory") {
+                let total = mem.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
+                let avail = mem.get("available").and_then(|v| v.as_u64()).unwrap_or(0);
+                println!("{}", field("totalmem", &bytes_to_size(total, 1)));
+                println!("{}", field("freemem", &bytes_to_size(avail, 1)));
+            }
+            println!("{}", sep);
+        }
     }
 
-    println!("{}", sep);
-    println!("{}", title("\x1b[1;34mDaemon logs\x1b[0m"));
-    tail_file(&client.paths.pm2_log_file_path, "PM2", "PM2", 20, false, None);
-    println!("```\n\n");
-    let _ = std::io::stdout().flush();
+    let procs = client.list().await.unwrap_or_default();
+    println!("{}", title(&format!("Process list ({})", procs.len())));
+    println!("{}", render_process_list(&procs, false, None, false));
+    println!("```");
     Ok(())
 }
 
-pub fn render_tree(val: &Value, prefix: &str, is_last: bool) -> String {
+pub fn render_tree(val: &serde_json::Value, prefix: &str, is_root: bool) -> String {
     let mut out = String::new();
     match val {
-        Value::Object(map) => {
+        serde_json::Value::Object(map) => {
+            if is_root {
+                out.push_str("├─ system_info\n");
+            }
             let len = map.len();
             for (idx, (k, v)) in map.iter().enumerate() {
-                let last = idx + 1 == len;
-                let branch = if last { "└─ " } else { "├─ " };
-                let next_prefix = format!("{}{}", prefix, if last { "   " } else { "│  " });
-                if v.is_object() || v.is_array() {
-                    out.push_str(&format!("{}{}{}\n", prefix, branch, k));
-                    out.push_str(&render_tree(v, &next_prefix, last));
+                let is_last = idx + 1 == len;
+                let branch = if is_last { "└─ " } else { "├─ " };
+                let next_prefix = if is_last {
+                    format!("{}   ", prefix)
                 } else {
-                    let s = v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string());
-                    out.push_str(&format!("{}{}{}: {}\n", prefix, branch, k, s));
+                    format!("{}│  ", prefix)
+                };
+                match v {
+                    serde_json::Value::Object(_) | serde_json::Value::Array(_) => {
+                        out.push_str(&format!("{}{}{}\n", prefix, branch, k));
+                        out.push_str(&render_tree(v, &next_prefix, false));
+                    }
+                    _ => {
+                        let s = v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string());
+                        out.push_str(&format!("{}{}{}: {}\n", prefix, branch, k, s));
+                    }
                 }
             }
         }
-        Value::Array(arr) => {
+        serde_json::Value::Array(arr) => {
             let len = arr.len();
-            for (idx, v) in arr.iter().enumerate() {
-                let last = idx + 1 == len;
-                let branch = if last { "└─ " } else { "├─ " };
-                let next_prefix = format!("{}{}", prefix, if last { "   " } else { "│  " });
-                if v.is_object() || v.is_array() {
-                    out.push_str(&format!("{}{}[{}]\n", prefix, branch, idx));
-                    out.push_str(&render_tree(v, &next_prefix, last));
+            for (idx, item) in arr.iter().enumerate() {
+                let is_last = idx + 1 == len;
+                let branch = if is_last { "└─ " } else { "├─ " };
+                let next_prefix = if is_last {
+                    format!("{}   ", prefix)
                 } else {
-                    out.push_str(&format!("{}{}{}\n", prefix, branch, v));
+                    format!("{}│  ", prefix)
+                };
+                match item {
+                    serde_json::Value::Object(_) | serde_json::Value::Array(_) => {
+                        out.push_str(&format!("{}{}[{}]\n", prefix, branch, idx));
+                        out.push_str(&render_tree(item, &next_prefix, false));
+                    }
+                    _ => {
+                        let s = item.as_str().map(|s| s.to_string()).unwrap_or_else(|| item.to_string());
+                        out.push_str(&format!("{}{}{}\n", prefix, branch, s));
+                    }
                 }
             }
         }
-        other => {
-            let _ = is_last;
-            out.push_str(&format!("{}{}\n", prefix, other));
+        _ => {
+            let s = val.as_str().map(|s| s.to_string()).unwrap_or_else(|| val.to_string());
+            out.push_str(&format!("{}{}\n", prefix, s));
         }
     }
     out

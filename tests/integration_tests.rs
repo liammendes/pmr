@@ -393,3 +393,86 @@ fn test_serve_and_web_api() {
 
     let _ = run_pmr(&home, &["kill"]);
 }
+
+#[test]
+fn test_restart_patch_update_env_and_only_filter() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path().join(".pmr");
+    let app_a = tmp.path().join("a.js");
+    let app_b = tmp.path().join("b.js");
+    fs::write(&app_a, "setInterval(() => {}, 1000);").unwrap();
+    fs::write(&app_b, "setInterval(() => {}, 1000);").unwrap();
+
+    let eco = tmp.path().join("ecosystem.config.json");
+    fs::write(
+        &eco,
+        serde_json::json!({
+            "apps": [
+                { "name": "app-a", "script": app_a.to_str().unwrap() },
+                { "name": "app-b", "script": app_b.to_str().unwrap() }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let out = run_pmr(&home, &["start", eco.to_str().unwrap()]);
+    assert!(out.status.success());
+
+    // Stop only app-a via ecosystem --only
+    let sout = run_pmr(
+        &home,
+        &["stop", eco.to_str().unwrap(), "--only", "app-a"],
+    );
+    assert!(sout.status.success());
+
+    let jout = run_pmr(&home, &["jlist"]);
+    let procs: Vec<Value> = serde_json::from_slice(&jout.stdout).unwrap();
+    let pa = procs.iter().find(|p| p["name"] == "app-a").unwrap();
+    let pb = procs.iter().find(|p| p["name"] == "app-b").unwrap();
+    assert_eq!(pa["pm2_env"]["status"], "stopped");
+    assert_eq!(pb["pm2_env"]["status"], "online");
+
+    // Restart app-b with updated attributes and --update-env
+    let mut cmd = Command::new(pmr_bin());
+    cmd.env("PMR_HOME", &home)
+        .env("CUSTOM_INJECTED_VAR", "hello_123")
+        .args([
+            "restart",
+            "app-b",
+            "--update-env",
+            "--kill-timeout",
+            "4321",
+            "--max-memory-restart",
+            "128M",
+            "--",
+            "--port",
+            "9090",
+        ]);
+    let rout = cmd.output().unwrap();
+    assert!(rout.status.success());
+
+    let jout2 = run_pmr(&home, &["jlist"]);
+    let procs2: Vec<Value> = serde_json::from_slice(&jout2.stdout).unwrap();
+    let pb2 = procs2.iter().find(|p| p["name"] == "app-b").unwrap();
+    assert_eq!(pb2["pm2_env"]["kill_timeout"], 4321);
+    assert_eq!(pb2["pm2_env"]["max_memory_restart"], 128 * 1024 * 1024);
+    assert_eq!(pb2["pm2_env"]["args"][0], "--port");
+    assert_eq!(pb2["pm2_env"]["args"][1], "9090");
+    assert_eq!(pb2["pm2_env"]["CUSTOM_INJECTED_VAR"], "hello_123");
+
+    // Save & resurrect should preserve app-a as stopped and app-b as online with restart_time reset to 0
+    assert!(run_pmr(&home, &["save"]).status.success());
+    assert!(run_pmr(&home, &["delete", "all"]).status.success());
+    assert!(run_pmr(&home, &["resurrect"]).status.success());
+
+    let jout3 = run_pmr(&home, &["jlist"]);
+    let procs3: Vec<Value> = serde_json::from_slice(&jout3.stdout).unwrap();
+    let pa3 = procs3.iter().find(|p| p["name"] == "app-a").unwrap();
+    let pb3 = procs3.iter().find(|p| p["name"] == "app-b").unwrap();
+    assert_eq!(pa3["pm2_env"]["status"], "stopped");
+    assert_eq!(pb3["pm2_env"]["status"], "online");
+    assert_eq!(pb3["pm2_env"]["restart_time"], 0);
+
+    let _ = run_pmr(&home, &["kill"]);
+}

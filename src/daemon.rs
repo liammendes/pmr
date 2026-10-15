@@ -2,6 +2,7 @@ use anyhow::Result;
 use serde_json::{json, Value};
 use std::env;
 use std::fs::{self, OpenOptions};
+use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 use sysinfo::{Disks, Networks, System};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -10,9 +11,9 @@ use tokio::sync::{broadcast, mpsc, Mutex, Notify};
 
 use crate::constants::PMR_VERSION;
 use crate::god::{
-    delete_process_id, duplicate_process_id, handle_node_ipc_message, now_ms, parse_unix_signal,
-    prepare_and_launch, reload_process_id, restart_process_id, scale_application,
-    setup_watcher_for_process, spawn_worker_and_cron_loops, start_process_id, stop_process_id, God,
+    delete_process_id, duplicate_process_id, handle_node_ipc_message, prepare_and_launch,
+    reload_process_id, restart_process_id, scale_application, setup_watcher_for_process,
+    spawn_worker_and_cron_loops, start_process_id, stop_process_id, God,
 };
 use crate::paths::PmrPaths;
 use crate::protocol::{BusEvent, RpcRequest, RpcResponse};
@@ -20,6 +21,22 @@ use crate::startup::dump_processes_to_disk;
 
 pub async fn run_daemon(paths: PmrPaths) -> Result<()> {
     paths.init_file_structure()?;
+
+    // Acquire exclusive non-blocking flock on daemon.lock before touching sockets
+    let lock_path = paths.pm2_home.join("daemon.lock");
+    let lock_file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(&lock_path)?;
+    #[cfg(unix)]
+    {
+        let rc = unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        if rc != 0 {
+            // Another daemon instance already holds the lock for this PMR_HOME
+            return Ok(());
+        }
+    }
 
     let pid = std::process::id();
     fs::write(&paths.pm2_pid_file_path, pid.to_string())?;
@@ -32,13 +49,13 @@ pub async fn run_daemon(paths: PmrPaths) -> Result<()> {
     let pub_listener = UnixListener::bind(&paths.daemon_pub_port)?;
     let ipc_listener = UnixListener::bind(&paths.node_ipc_sock)?;
 
-    let (bus_tx, _) = broadcast::channel::<BusEvent>(2048);
+    let (bus_tx, _) = broadcast::channel::<BusEvent>(4096);
     let god = God::new(paths.clone(), bus_tx.clone());
     {
         let g = god.lock().await;
-        g.log_pm2(&format!(
-            "==============================================================================="
-        ));
+        g.log_pm2(
+            "===============================================================================",
+        );
         g.log_pm2(&format!(
             "--- New PMR Daemon booted --- pid: {} --- home: {}",
             pid,
@@ -55,11 +72,21 @@ pub async fn run_daemon(paths: PmrPaths) -> Result<()> {
             let mut rx = pub_bus_tx.subscribe();
             tokio::spawn(async move {
                 let (_, mut writer) = stream.into_split();
-                while let Ok(ev) = rx.recv().await {
-                    if let Ok(line) = serde_json::to_string(&ev) {
-                        if writer.write_all(format!("{}\n", line).as_bytes()).await.is_err() {
-                            break;
+                loop {
+                    match rx.recv().await {
+                        Ok(ev) => {
+                            if let Ok(line) = serde_json::to_string(&ev) {
+                                if writer
+                                    .write_all(format!("{}\n", line).as_bytes())
+                                    .await
+                                    .is_err()
+                                {
+                                    break;
+                                }
+                            }
                         }
+                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(broadcast::error::RecvError::Closed) => break,
                     }
                 }
             });
@@ -117,7 +144,7 @@ pub async fn run_daemon(paths: PmrPaths) -> Result<()> {
                     _ = sigusr2.recv() => {
                         let g = god_sig.lock().await;
                         for proc in g.clusters_db.values() {
-                            proc.log_reload_notify.notify_waiters();
+                            let _ = proc.log_reload_tx.send_modify(|v| *v = v.wrapping_add(1));
                         }
                     }
                     _ = sigterm.recv() => break,
@@ -126,7 +153,7 @@ pub async fn run_daemon(paths: PmrPaths) -> Result<()> {
                 }
             }
 
-            // Graceful daemon shutdown on OS signal: dump & stop all processes
+            // Graceful daemon shutdown on OS signal: dump while statuses are preserved, then stop all
             let ids: Vec<u32> = {
                 let mut g = god_sig.lock().await;
                 g.pm2_being_killed = true;
@@ -165,6 +192,7 @@ pub async fn run_daemon(paths: PmrPaths) -> Result<()> {
     let _ = fs::remove_file(&paths.daemon_pub_port);
     let _ = fs::remove_file(&paths.node_ipc_sock);
     let _ = fs::remove_file(&paths.pm2_pid_file_path);
+    drop(lock_file);
 
     Ok(())
 }
@@ -228,7 +256,6 @@ async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bo
             let networks = Networks::new_with_refreshed_list();
 
             let disk_list: Vec<Value> = disks
-                .list()
                 .iter()
                 .map(|d| {
                     json!({
@@ -241,23 +268,24 @@ async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bo
                 .collect();
 
             let net_list: Vec<Value> = networks
-                .list()
                 .iter()
-                .map(|(name, data)| {
+                .map(|(name, net)| {
                     json!({
                         "interface": name,
-                        "received": data.total_received(),
-                        "transmitted": data.total_transmitted(),
+                        "received": net.total_received(),
+                        "transmitted": net.total_transmitted(),
                     })
                 })
                 .collect();
 
-            let mut g = god.lock().await;
-            let procs = g.get_formatted_processes();
+            let procs = {
+                let mut g = god.lock().await;
+                g.get_formatted_processes()
+            };
 
             let data = json!({
                 "system": {
-                    "hostname": System::host_name().unwrap_or_default(),
+                    "hostname": System::host_name().unwrap_or_else(|| "localhost".to_string()),
                     "os_name": System::name().unwrap_or_default(),
                     "os_version": System::os_version().unwrap_or_default(),
                     "kernel_version": System::kernel_version().unwrap_or_default(),
@@ -300,16 +328,21 @@ async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bo
             Ok(p) => (RpcResponse::success(p), false),
             Err(e) => (RpcResponse::err(e.to_string()), false),
         },
-        RpcRequest::RestartProcessId { id, env } => match restart_process_id(god, id, env).await {
-            Ok(p) => (RpcResponse::success(p), false),
-            Err(e) => (RpcResponse::err(e.to_string()), false),
-        },
-        RpcRequest::ReloadProcessId { id, env, soft } => {
-            match reload_process_id(god, id, env, soft).await {
+        RpcRequest::RestartProcessId { id, env, conf } => {
+            match restart_process_id(god, id, env, conf).await {
                 Ok(p) => (RpcResponse::success(p), false),
                 Err(e) => (RpcResponse::err(e.to_string()), false),
             }
         }
+        RpcRequest::ReloadProcessId {
+            id,
+            env,
+            conf,
+            soft,
+        } => match reload_process_id(god, id, env, conf, soft).await {
+            Ok(p) => (RpcResponse::success(p), false),
+            Err(e) => (RpcResponse::err(e.to_string()), false),
+        },
         RpcRequest::DeleteProcessId { id } => match delete_process_id(god, id).await {
             Ok(p) => (RpcResponse::success(p), false),
             Err(e) => (RpcResponse::err(e.to_string()), false),
@@ -325,10 +358,11 @@ async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bo
         RpcRequest::ResetMetaProcessId { id } => {
             let mut g = god.lock().await;
             if let Some(proc) = g.clusters_db.get_mut(&id) {
-                proc.pm2_env.created_at = Some(now_ms());
+                proc.pm2_env.created_at = Some(crate::god::now_ms());
                 proc.pm2_env.unstable_restarts = 0;
                 proc.pm2_env.restart_time = 0;
                 proc.pm2_env.prev_restart_delay = 0;
+                proc.pm2_env.sync_flattened_env();
                 let procs = g.get_formatted_processes();
                 (RpcResponse::success(procs), false)
             } else {
@@ -340,7 +374,10 @@ async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bo
             if let Some(proc) = g.clusters_db.get(&pm_id) {
                 if let Some(ref tx) = proc.stdin_tx {
                     let _ = tx.send(line.clone());
-                    (RpcResponse::success(json!({ "pm_id": pm_id, "line": line })), false)
+                    (
+                        RpcResponse::success(json!({ "pm_id": pm_id, "line": line })),
+                        false,
+                    )
                 } else {
                     (RpcResponse::err("Process stdin is not open"), false)
                 }
@@ -356,7 +393,10 @@ async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bo
                 } else if let Some(ref stdin_tx) = proc.stdin_tx {
                     let _ = stdin_tx.send(packet.to_string());
                 }
-                (RpcResponse::success(json!({ "success": true, "data": packet })), false)
+                (
+                    RpcResponse::success(json!({ "success": true, "data": packet })),
+                    false,
+                )
             } else {
                 (RpcResponse::err(format!("Process {} not found", id)), false)
             }
@@ -377,11 +417,11 @@ async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bo
                     _ => false,
                 };
                 if matched {
-                    let payload = if let Some(ref o) = opts {
-                        json!({ "msg": msg, "opts": o })
-                    } else {
-                        json!({ "__pmr_raw": msg })
-                    };
+                    let payload = json!({
+                        "type": "axm:action:trigger",
+                        "action_name": msg,
+                        "opts": opts,
+                    });
                     if let Some(ref tx) = proc.ipc_tx {
                         let _ = tx.send(payload.to_string());
                         count += 1;
@@ -397,7 +437,7 @@ async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bo
             )
         }
         RpcRequest::SendSignalToProcessId { process_id, signal } => {
-            let Some(sig) = parse_unix_signal(&signal) else {
+            let Some(sig) = crate::god::parse_unix_signal(&signal) else {
                 return (RpcResponse::err(format!("Unknown signal: {}", signal)), false);
             };
             let mut g = god.lock().await;
@@ -420,7 +460,7 @@ async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bo
             process_name,
             signal,
         } => {
-            let Some(sig) = parse_unix_signal(&signal) else {
+            let Some(sig) = crate::god::parse_unix_signal(&signal) else {
                 return (RpcResponse::err(format!("Unknown signal: {}", signal)), false);
             };
             let mut g = god.lock().await;
@@ -511,7 +551,7 @@ async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bo
         RpcRequest::ReloadLogs => {
             let g = god.lock().await;
             for proc in g.clusters_db.values() {
-                proc.log_reload_notify.notify_waiters();
+                let _ = proc.log_reload_tx.send_modify(|v| *v = v.wrapping_add(1));
                 if let Some(ref tx) = proc.ipc_tx {
                     let _ = tx.send(json!({ "type": "log:reload" }).to_string());
                 }
@@ -520,7 +560,7 @@ async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bo
         }
         RpcRequest::FlushLogs { target } => {
             let g = god.lock().await;
-            if target.is_none() || target.as_deref() == Some("all") {
+            if target.is_none() {
                 let _ = OpenOptions::new()
                     .write(true)
                     .truncate(true)
@@ -528,24 +568,26 @@ async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bo
             }
             for proc in g.clusters_db.values() {
                 let matched = match target.as_deref() {
-                    None | Some("all") => true,
-                    Some(t) => {
-                        proc.pm2_env.name == t
-                            || proc.pm2_env.pm_id.to_string() == t
-                            || proc.pm2_env.namespace == t
-                    }
+                    None => true,
+                    Some(t) => proc.pm2_env.name == t || proc.pm2_env.pm_id.to_string() == t,
                 };
                 if matched {
-                    let _ = OpenOptions::new()
-                        .write(true)
-                        .truncate(true)
-                        .open(&proc.pm2_env.pm_out_log_path);
-                    let _ = OpenOptions::new()
-                        .write(true)
-                        .truncate(true)
-                        .open(&proc.pm2_env.pm_err_log_path);
+                    if proc.pm2_env.pm_out_log_path != "/dev/null" {
+                        let _ = OpenOptions::new()
+                            .write(true)
+                            .truncate(true)
+                            .open(&proc.pm2_env.pm_out_log_path);
+                    }
+                    if proc.pm2_env.pm_err_log_path != "/dev/null" {
+                        let _ = OpenOptions::new()
+                            .write(true)
+                            .truncate(true)
+                            .open(&proc.pm2_env.pm_err_log_path);
+                    }
                     if let Some(ref lp) = proc.pm2_env.pm_log_path {
-                        let _ = OpenOptions::new().write(true).truncate(true).open(lp);
+                        if lp != "/dev/null" {
+                            let _ = OpenOptions::new().write(true).truncate(true).open(lp);
+                        }
                     }
                 }
             }
@@ -600,19 +642,88 @@ async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bo
             pwd,
             timeout_ms,
         } => {
-            tokio::time::sleep(std::time::Duration::from_millis(timeout_ms.min(2000))).await;
+            let start_us = chrono::Utc::now().timestamp_micros();
+            tokio::time::sleep(std::time::Duration::from_millis(timeout_ms)).await;
+            let end_us = chrono::Utc::now().timestamp_micros();
             let procs = {
                 let mut g = god.lock().await;
                 g.get_formatted_processes()
             };
-            let profile_data = json!({
-                "kind": kind,
-                "timestamp": chrono::Utc::now().to_rfc3339(),
-                "pmr_version": PMR_VERSION,
-                "processes": procs,
-            });
-            let _ = fs::write(&pwd, serde_json::to_string_pretty(&profile_data).unwrap_or_default());
-            (RpcResponse::success(json!({ "file": pwd })), false)
+            let profile_data = if kind == "cpu" {
+                json!({
+                    "nodes": [
+                        {
+                            "id": 1,
+                            "callFrame": {
+                                "functionName": "(root)",
+                                "scriptId": "0",
+                                "url": "",
+                                "lineNumber": -1,
+                                "columnNumber": -1
+                            },
+                            "hitCount": 0,
+                            "children": [2]
+                        },
+                        {
+                            "id": 2,
+                            "callFrame": {
+                                "functionName": "pmr_daemon_event_loop",
+                                "scriptId": "1",
+                                "url": "pmr://daemon",
+                                "lineNumber": 1,
+                                "columnNumber": 1
+                            },
+                            "hitCount": (timeout_ms / 10).max(1),
+                            "children": []
+                        }
+                    ],
+                    "startTime": start_us,
+                    "endTime": end_us,
+                    "samples": [2],
+                    "timeDeltas": [timeout_ms * 1000],
+                    "processes": procs
+                })
+            } else {
+                let total_mem: u64 = procs.iter().map(|p| p.monit.memory).sum();
+                json!({
+                    "head": {
+                        "callFrame": {
+                            "functionName": "(root)",
+                            "scriptId": "0",
+                            "url": "",
+                            "lineNumber": -1,
+                            "columnNumber": -1
+                        },
+                        "selfSize": 0,
+                        "id": 1,
+                        "children": [
+                            {
+                                "callFrame": {
+                                    "functionName": "pmr_daemon_heap",
+                                    "scriptId": "1",
+                                    "url": "pmr://daemon",
+                                    "lineNumber": 1,
+                                    "columnNumber": 1
+                                },
+                                "selfSize": total_mem.max(4096),
+                                "id": 2,
+                                "children": []
+                            }
+                        ]
+                    },
+                    "samples": [
+                        { "size": total_mem.max(4096), "nodeId": 2, "ordinal": 1 }
+                    ],
+                    "processes": procs
+                })
+            };
+            match fs::write(
+                &pwd,
+                serde_json::to_string_pretty(&profile_data).unwrap_or_default(),
+            ) {
+                Ok(_) => (RpcResponse::success(json!({ "file": pwd })), false),
+                Err(e) => (RpcResponse::err(e.to_string()), false),
+            }
         }
     }
 }

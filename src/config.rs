@@ -1,8 +1,9 @@
 use anyhow::{anyhow, Context, Result};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::env;
+use std::ffi::{CStr, CString};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -17,6 +18,14 @@ use crate::constants::{
 use crate::paths::PmrPaths;
 use crate::process::{Pm2Env, VersioningInfo};
 
+fn deserialize_string_map<'de, D>(deserializer: D) -> std::result::Result<BTreeMap<String, String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let val = Option::<Value>::deserialize(deserializer)?;
+    Ok(val.as_ref().map(value_to_string_map).unwrap_or_default())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DeployEnvConfig {
     pub user: Option<String>,
@@ -25,6 +34,8 @@ pub struct DeployEnvConfig {
     pub git_ref: Option<String>,
     pub repo: Option<String>,
     pub path: Option<String>,
+    pub key: Option<String>,
+    pub port: Option<Value>,
     pub ssh_options: Option<Value>,
     #[serde(rename = "pre-setup")]
     pub pre_setup: Option<String>,
@@ -32,9 +43,11 @@ pub struct DeployEnvConfig {
     pub post_setup: Option<String>,
     #[serde(rename = "pre-deploy-local")]
     pub pre_deploy_local: Option<String>,
+    #[serde(rename = "pre-deploy")]
+    pub pre_deploy: Option<String>,
     #[serde(rename = "post-deploy")]
     pub post_deploy: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_map")]
     pub env: BTreeMap<String, String>,
 }
 
@@ -56,10 +69,12 @@ pub struct AppConfig {
     #[serde(default)]
     pub node_args: Vec<String>,
     pub exec_mode: Option<String>,
-    pub instances: Option< isize>,
+    pub instances: Option<isize>,
     pub out_file: Option<String>,
     pub error_file: Option<String>,
     pub log_file: Option<String>,
+    #[serde(default)]
+    pub log_file_default: bool,
     pub pid_file: Option<String>,
     pub merge_logs: Option<bool>,
     pub disable_logs: Option<bool>,
@@ -90,21 +105,28 @@ pub struct AppConfig {
     pub port: Option<u16>,
     pub uid: Option<u32>,
     pub gid: Option<u32>,
+    pub gid_name: Option<String>,
     pub username: Option<String>,
     pub instance_var: Option<String>,
     pub increment_var: Option<String>,
     pub append_env_to_name: Option<bool>,
     #[serde(default)]
     pub filter_env: Vec<String>,
+    pub filter_env_exact: Option<String>,
     pub filter_env_all: bool,
     pub force: Option<bool>,
     pub vizion: Option<bool>,
+    pub source_map_support: Option<bool>,
     pub pmx: Option<bool>,
     pub pmx_module: Option<bool>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
     #[serde(default)]
     pub env_variants: BTreeMap<String, BTreeMap<String, String>>,
+    #[serde(default)]
+    pub from_ecosystem: bool,
+    #[serde(default)]
+    pub multi_app_ecosystem: bool,
 }
 
 /// Parse human byte strings like `"150M"`, `"2G"`, `"512K"`, `"1024"`.
@@ -229,6 +251,14 @@ fn value_to_string_map(val: &Value) -> BTreeMap<String, String> {
     map
 }
 
+fn value_as_u64(val: &Value) -> Option<u64> {
+    match val {
+        Value::Number(n) => n.as_u64().or_else(|| n.as_i64().and_then(|i| u64::try_from(i).ok())),
+        Value::String(s) => s.trim().parse::<u64>().ok(),
+        _ => None,
+    }
+}
+
 impl AppConfig {
     pub fn from_json_value(val: &Value) -> Result<Self> {
         let obj = val
@@ -238,7 +268,7 @@ impl AppConfig {
         let mut cfg = AppConfig::default();
 
         for (raw_k, v) in obj {
-            // Normalize camelCase to snake_case
+            // Normalize camelCase to snake_case while preserving env_<Name>
             let k = camel_to_snake(raw_k);
             match k.as_str() {
                 "script" | "exec" | "cmd" | "command" | "pm_exec_path" => {
@@ -255,10 +285,15 @@ impl AppConfig {
                 }
                 "node_args" | "interpreter_args" => cfg.node_args = value_to_string_vec(v),
                 "exec_mode" => cfg.exec_mode = v.as_str().map(|s| s.to_string()),
+                "execute_command" => {
+                    if v.as_bool() == Some(true) && cfg.exec_mode.is_none() {
+                        cfg.exec_mode = Some("fork_mode".to_string());
+                    }
+                }
                 "instances" => match v {
                     Value::Number(n) => cfg.instances = n.as_i64().map(|i| i as isize),
                     Value::String(s) if s == "max" => cfg.instances = Some(0),
-                    Value::String(s) => cfg.instances = s.parse::<isize>().ok(),
+                    Value::String(s) => cfg.instances = s.trim().parse::<isize>().ok(),
                     _ => {}
                 },
                 "out_file" | "out" | "output" | "out_log" | "pm_out_log_path" => {
@@ -268,8 +303,17 @@ impl AppConfig {
                     cfg.error_file = v.as_str().map(|s| s.to_string())
                 }
                 "log_file" | "log" | "pm_log_path" => match v {
-                    Value::String(s) => cfg.log_file = Some(s.clone()),
-                    Value::Bool(false) => cfg.disable_logs = Some(true),
+                    Value::String(s) => {
+                        cfg.log_file = Some(s.clone());
+                        cfg.log_file_default = false;
+                    }
+                    Value::Bool(true) => {
+                        cfg.log_file_default = true;
+                    }
+                    Value::Bool(false) => {
+                        cfg.log_file = None;
+                        cfg.log_file_default = false;
+                    }
                     _ => {}
                 },
                 "pid_file" | "pid" | "pm_pid_path" => {
@@ -278,12 +322,16 @@ impl AppConfig {
                 "merge_logs" | "combine_logs" => cfg.merge_logs = v.as_bool(),
                 "disable_logs" => cfg.disable_logs = v.as_bool(),
                 "log_type" => cfg.log_type = v.as_str().map(|s| s.to_string()),
-                "log_date_format" => cfg.log_date_format = v.as_str().map(|s| s.to_string()),
+                "log_date_format" => match v {
+                    Value::String(s) => cfg.log_date_format = Some(s.clone()),
+                    Value::Bool(false) => cfg.log_date_format = None,
+                    _ => {}
+                },
                 "time" => cfg.time = v.as_bool(),
                 "max_memory_restart" => cfg.max_memory_restart = parse_byte_size(v),
                 "min_uptime" => cfg.min_uptime = parse_duration_ms(v),
                 "max_restarts" => {
-                    cfg.max_restarts = v.as_u64().map(|n| n as u32);
+                    cfg.max_restarts = value_as_u64(v).map(|n| n as u32);
                 }
                 "restart_delay" => cfg.restart_delay = parse_duration_ms(v),
                 "exp_backoff_restart_delay" => cfg.exp_backoff_restart_delay = parse_duration_ms(v),
@@ -295,12 +343,17 @@ impl AppConfig {
                             cfg.stop_exit_codes.push(code as i32);
                         }
                     }
+                    Value::String(s) => {
+                        if let Ok(code) = s.trim().parse::<i32>() {
+                            cfg.stop_exit_codes.push(code);
+                        }
+                    }
                     Value::Array(arr) => {
                         for item in arr {
                             if let Some(code) = item.as_i64() {
                                 cfg.stop_exit_codes.push(code as i32);
                             } else if let Some(s) = item.as_str() {
-                                if let Ok(code) = s.parse::<i32>() {
+                                if let Ok(code) = s.trim().parse::<i32>() {
                                     cfg.stop_exit_codes.push(code);
                                 }
                             }
@@ -308,7 +361,12 @@ impl AppConfig {
                     }
                     _ => {}
                 },
-                "cron_restart" | "cron" => cfg.cron_restart = v.as_str().map(|s| s.to_string()),
+                "cron_restart" | "cron" => match v {
+                    Value::String(s) if s == "0" => cfg.cron_restart = None,
+                    Value::String(s) => cfg.cron_restart = Some(s.clone()),
+                    Value::Number(n) if n.as_i64() == Some(0) => cfg.cron_restart = None,
+                    _ => {}
+                },
                 "watch" => match v {
                     Value::Bool(b) => cfg.watch = Some(*b),
                     Value::String(s) => {
@@ -328,11 +386,11 @@ impl AppConfig {
                 "wait_ready" => cfg.wait_ready = v.as_bool(),
                 "shutdown_with_message" => cfg.shutdown_with_message = v.as_bool(),
                 "treekill" => cfg.treekill = v.as_bool(),
-                "port" => cfg.port = v.as_u64().map(|p| p as u16),
+                "port" => cfg.port = value_as_u64(v).map(|p| p as u16),
                 "uid" | "user" => match v {
                     Value::Number(n) => cfg.uid = n.as_u64().map(|u| u as u32),
                     Value::String(s) => {
-                        if let Ok(u) = s.parse::<u32>() {
+                        if let Ok(u) = s.trim().parse::<u32>() {
                             cfg.uid = Some(u);
                         } else {
                             cfg.username = Some(s.clone());
@@ -340,16 +398,28 @@ impl AppConfig {
                     }
                     _ => {}
                 },
-                "gid" => {
-                    cfg.gid = v.as_u64().map(|g| g as u32);
-                }
+                "gid" => match v {
+                    Value::Number(n) => cfg.gid = n.as_u64().map(|g| g as u32),
+                    Value::String(s) => {
+                        if let Ok(g) = s.trim().parse::<u32>() {
+                            cfg.gid = Some(g);
+                        } else {
+                            cfg.gid_name = Some(s.clone());
+                        }
+                    }
+                    _ => {}
+                },
                 "username" => cfg.username = v.as_str().map(|s| s.to_string()),
                 "instance_var" => cfg.instance_var = v.as_str().map(|s| s.to_string()),
                 "increment_var" => cfg.increment_var = v.as_str().map(|s| s.to_string()),
                 "append_env_to_name" => cfg.append_env_to_name = v.as_bool(),
                 "filter_env" => match v {
                     Value::Bool(true) => cfg.filter_env_all = true,
-                    Value::String(s) => cfg.filter_env.push(s.clone()),
+                    Value::Bool(false) => {
+                        cfg.filter_env_all = false;
+                        cfg.filter_env.clear();
+                    }
+                    Value::String(s) => cfg.filter_env_exact = Some(s.clone()),
                     Value::Array(_) => cfg.filter_env = value_to_string_vec(v),
                     _ => {}
                 },
@@ -359,9 +429,11 @@ impl AppConfig {
                 "pmx_module" => cfg.pmx_module = v.as_bool(),
                 "env" => cfg.env = value_to_string_map(v),
                 other if other.starts_with("env_") => {
-                    let env_name = & raw_k[4..];
-                    cfg.env_variants
-                        .insert(env_name.to_string(), value_to_string_map(v));
+                    let env_name = &other[4..];
+                    if !env_name.is_empty() {
+                        cfg.env_variants
+                            .insert(env_name.to_string(), value_to_string_map(v));
+                    }
                 }
                 _ => {}
             }
@@ -398,11 +470,16 @@ pub fn is_config_file(filename: &str) -> Option<&'static str> {
     if filename.ends_with(".config.js")
         || filename.ends_with(".config.cjs")
         || filename == "ecosystem.js"
+        || filename.ends_with("/ecosystem.js")
     {
         Some("js")
     } else if filename.ends_with(".config.mjs") {
         Some("mjs")
-    } else if filename.ends_with(".json") || filename.ends_with(".json5") || filename.ends_with(".pm2") || filename.ends_with(".pmr") {
+    } else if filename.ends_with(".json")
+        || filename.ends_with(".json5")
+        || filename.ends_with(".pm2")
+        || filename.ends_with(".pmr")
+    {
         Some("json")
     } else if filename.ends_with(".yml") || filename.ends_with(".yaml") {
         Some("yaml")
@@ -429,8 +506,15 @@ pub fn parse_config_file(path: &Path) -> Result<EcosystemConfig> {
             serde_json::to_value(toml_val)?
         }
         "js" | "mjs" => eval_js_config(path, &raw)?,
-        _ => parse_json_or_json5(&raw)
-            .with_context(|| format!("Failed to parse JSON/JSON5 config {}", path.display()))?,
+        _ => {
+            if let Ok(v) = parse_json_or_json5(&raw) {
+                v
+            } else {
+                eval_js_config(path, &raw).with_context(|| {
+                    format!("Failed to parse JSON/JSON5/JS config {}", path.display())
+                })?
+            }
+        }
     };
 
     ecosystem_from_value(&val)
@@ -457,7 +541,6 @@ fn parse_json_or_json5(raw: &str) -> Result<Value> {
 }
 
 fn eval_js_config(path: &Path, raw: &str) -> Result<Value> {
-    // First try stripping `module.exports =` or `export default` and parsing with json5!
     let trimmed = raw.trim();
     let stripped = trimmed
         .strip_prefix("module.exports")
@@ -472,17 +555,29 @@ fn eval_js_config(path: &Path, raw: &str) -> Result<Value> {
         return Ok(v);
     }
 
-    // Fallback to evaluating with `node` if available
-    let abs_path = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    // Fallback to evaluating with `node` using a delimiter so user console.log doesn't break JSON
+    let abs_path = fs::canonicalize(path).unwrap_or_else(|_| {
+        env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(path)
+    });
+    let marker = "__PMR_JSON_CONFIG_START__";
     let script = format!(
-        "import('url').then(async ({{pathToFileURL}}) => {{ try {{ const m = await import(pathToFileURL({}).href); console.log(JSON.stringify(m.default || m)); }} catch (e) {{ const m = require({}); console.log(JSON.stringify(m)); }} }})",
+        "import('url').then(async ({{pathToFileURL}}) => {{ try {{ const m = await import(pathToFileURL({}).href); process.stdout.write({} + JSON.stringify(m.default || m)); }} catch (e) {{ const m = require({}); process.stdout.write({} + JSON.stringify(m)); }} }}).catch(err => {{ console.error(err); process.exit(1); }})",
         serde_json::to_string(&abs_path.to_string_lossy())?,
-        serde_json::to_string(&abs_path.to_string_lossy())?
+        serde_json::to_string(marker)?,
+        serde_json::to_string(&abs_path.to_string_lossy())?,
+        serde_json::to_string(marker)?
     );
     let output = Command::new("node").arg("-e").arg(&script).output()?;
     if output.status.success() {
         let out_str = String::from_utf8_lossy(&output.stdout);
-        if let Ok(v) = serde_json::from_str::<Value>(out_str.trim()) {
+        let json_part = if let Some(idx) = out_str.rfind(marker) {
+            &out_str[idx + marker.len()..]
+        } else {
+            out_str.as_ref()
+        };
+        if let Ok(v) = serde_json::from_str::<Value>(json_part.trim()) {
             return Ok(v);
         }
     }
@@ -497,18 +592,22 @@ pub fn ecosystem_from_value(val: &Value) -> Result<EcosystemConfig> {
     let mut eco = EcosystemConfig::default();
 
     if let Some(arr) = val.as_array() {
+        let multi = arr.len() > 1;
         for item in arr {
-            eco.apps.push(AppConfig::from_json_value(item)?);
+            let mut app = AppConfig::from_json_value(item)?;
+            app.from_ecosystem = true;
+            app.multi_app_ecosystem = multi;
+            eco.apps.push(app);
         }
         return Ok(eco);
     }
 
     if let Some(obj) = val.as_object() {
-        if let Some(deploy_val) = obj.get("deploy") {
-            if let Ok(deploy_map) =
-                serde_json::from_value::<BTreeMap<String, DeployEnvConfig>>(deploy_val.clone())
-            {
-                eco.deploy = deploy_map;
+        if let Some(deploy_val) = obj.get("deploy").and_then(|v| v.as_object()) {
+            for (k, v) in deploy_val {
+                if let Ok(d) = serde_json::from_value::<DeployEnvConfig>(v.clone()) {
+                    eco.deploy.insert(k.clone(), d);
+                }
             }
         }
 
@@ -520,22 +619,48 @@ pub fn ecosystem_from_value(val: &Value) -> Result<EcosystemConfig> {
                         .and_then(|v| v.as_str())
                         .unwrap_or(".")
                         .to_string();
-                    let serve_port = sobj.get("port").and_then(|v| v.as_u64()).unwrap_or(8080);
+                    let serve_port = sobj
+                        .get("port")
+                        .and_then(value_as_u64)
+                        .unwrap_or(8080);
+                    let serve_host = sobj
+                        .get("host")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("0.0.0.0")
+                        .to_string();
                     let name = sobj
                         .get("name")
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string())
                         .unwrap_or_else(|| format!("static-page-server-{}", serve_port));
                     let mut env = BTreeMap::new();
-                    env.insert("PM2_SERVE_PATH".to_string(), serve_path.clone());
+                    env.insert("PM2_SERVE_PATH".to_string(), serve_path);
                     env.insert("PM2_SERVE_PORT".to_string(), serve_port.to_string());
+                    env.insert("PM2_SERVE_HOST".to_string(), serve_host);
                     if let Some(spa) = sobj.get("spa").and_then(|v| v.as_bool()) {
                         env.insert("PM2_SERVE_SPA".to_string(), spa.to_string());
+                    }
+                    if let Some(homepage) = sobj.get("homepage").and_then(|v| v.as_str()) {
+                        env.insert("PM2_SERVE_HOMEPAGE".to_string(), homepage.to_string());
+                    }
+                    if let Some(monitor) = sobj.get("monitor").and_then(|v| v.as_str()) {
+                        env.insert("PM2_SERVE_MONITOR".to_string(), monitor.to_string());
+                    }
+                    if let Some(auth) = sobj.get("basic_auth").and_then(|v| v.as_object()) {
+                        if let (Some(u), Some(p)) = (
+                            auth.get("username").and_then(|v| v.as_str()),
+                            auth.get("password").and_then(|v| v.as_str()),
+                        ) {
+                            env.insert("PM2_SERVE_BASIC_AUTH".to_string(), "true".to_string());
+                            env.insert("PM2_SERVE_BASIC_AUTH_USERNAME".to_string(), u.to_string());
+                            env.insert("PM2_SERVE_BASIC_AUTH_PASSWORD".to_string(), p.to_string());
+                        }
                     }
                     eco.apps.push(AppConfig {
                         script: "__pmr_serve__".to_string(),
                         name: Some(name),
                         env,
+                        from_ecosystem: true,
                         ..Default::default()
                     });
                 }
@@ -548,16 +673,29 @@ pub fn ecosystem_from_value(val: &Value) -> Result<EcosystemConfig> {
             .unwrap_or(val);
 
         if let Some(arr) = apps_val.as_array() {
+            let multi = arr.len() + eco.apps.len() > 1;
             for item in arr {
-                eco.apps.push(AppConfig::from_json_value(item)?);
+                let mut app = AppConfig::from_json_value(item)?;
+                app.from_ecosystem = true;
+                app.multi_app_ecosystem = multi;
+                eco.apps.push(app);
             }
-        } else if apps_val.is_object() && apps_val.get("script").is_some()
-            || apps_val.get("exec").is_some()
-            || apps_val.get("cmd").is_some()
-            || apps_val.get("command").is_some()
-            || apps_val.get("pm_exec_path").is_some()
+        } else if apps_val.is_object()
+            && (apps_val.get("script").is_some()
+                || apps_val.get("exec").is_some()
+                || apps_val.get("cmd").is_some()
+                || apps_val.get("command").is_some()
+                || apps_val.get("pm_exec_path").is_some())
         {
-            eco.apps.push(AppConfig::from_json_value(apps_val)?);
+            let mut app = AppConfig::from_json_value(apps_val)?;
+            app.from_ecosystem = true;
+            eco.apps.push(app);
+        }
+    }
+
+    if eco.apps.len() > 1 {
+        for app in &mut eco.apps {
+            app.multi_app_ecosystem = true;
         }
     }
 
@@ -612,6 +750,101 @@ pub struct StartOptions {
     pub filter_env: Vec<String>,
     pub only: Option<String>,
     pub extra_env: BTreeMap<String, String>,
+    pub write: bool,
+    pub ext: Option<String>,
+    pub source_map_support: Option<bool>,
+    pub trace: Option<bool>,
+    pub v8: bool,
+    pub event_loop_inspector: bool,
+    pub deep_monitoring: bool,
+    pub force_autorestart: bool,
+    pub force_autostart: bool,
+}
+
+fn resolve_log_or_pid_file(
+    custom: Option<&str>,
+    default_dir: &Path,
+    default_filename: &str,
+    pm_cwd: &Path,
+) -> Result<String> {
+    match custom {
+        Some(raw) if !raw.is_empty() => {
+            if raw == "NULL" || raw == "/dev/null" {
+                return Ok("/dev/null".to_string());
+            }
+            let expanded = PmrPaths::expand_tilde(raw);
+            let resolved = if expanded.is_absolute() {
+                expanded
+            } else {
+                pm_cwd.join(expanded)
+            };
+            if let Some(parent) = resolved.parent() {
+                if !parent.exists() {
+                    fs::create_dir_all(parent).with_context(|| {
+                        format!("Could not create folder: {}", parent.display())
+                    })?;
+                }
+            }
+            Ok(resolved.to_string_lossy().to_string())
+        }
+        _ => Ok(default_dir
+            .join(default_filename)
+            .to_string_lossy()
+            .to_string()),
+    }
+}
+
+#[cfg(unix)]
+fn lookup_user_by_name(name: &str) -> Result<(u32, u32, Option<String>)> {
+    let c_name = CString::new(name).map_err(|_| anyhow!("Invalid user name"))?;
+    unsafe {
+        let pw = libc::getpwnam(c_name.as_ptr());
+        if pw.is_null() {
+            return Err(anyhow!("[PM2][ERROR] User {} cannot be found", name));
+        }
+        let uid = (*pw).pw_uid;
+        let gid = (*pw).pw_gid;
+        let home = if !(*pw).pw_dir.is_null() {
+            Some(CStr::from_ptr((*pw).pw_dir).to_string_lossy().to_string())
+        } else {
+            None
+        };
+        Ok((uid, gid, home))
+    }
+}
+
+#[cfg(unix)]
+fn lookup_user_by_uid(uid: u32) -> Result<(u32, u32, Option<String>, Option<String>)> {
+    unsafe {
+        let pw = libc::getpwuid(uid);
+        if pw.is_null() {
+            return Err(anyhow!("[PM2][ERROR] User {} cannot be found", uid));
+        }
+        let gid = (*pw).pw_gid;
+        let home = if !(*pw).pw_dir.is_null() {
+            Some(CStr::from_ptr((*pw).pw_dir).to_string_lossy().to_string())
+        } else {
+            None
+        };
+        let name = if !(*pw).pw_name.is_null() {
+            Some(CStr::from_ptr((*pw).pw_name).to_string_lossy().to_string())
+        } else {
+            None
+        };
+        Ok((uid, gid, home, name))
+    }
+}
+
+#[cfg(unix)]
+fn lookup_group_by_name(name: &str) -> Result<u32> {
+    let c_name = CString::new(name).map_err(|_| anyhow!("Invalid group name"))?;
+    unsafe {
+        let gr = libc::getgrnam(c_name.as_ptr());
+        if gr.is_null() {
+            return Err(anyhow!("[PM2][ERROR] Group {} cannot be found", name));
+        }
+        Ok((*gr).gr_gid)
+    }
 }
 
 /// Merge CLI `StartOptions` into an `AppConfig` and resolve into a ready-to-run `Pm2Env`.
@@ -622,13 +855,19 @@ pub fn resolve_app_to_pm2_env(
     paths: &PmrPaths,
 ) -> Result<(Pm2Env, usize)> {
     if let Some(ref name) = opts.name {
-        app.name = Some(name.clone());
+        if !app.from_ecosystem {
+            app.name = Some(name.clone());
+        }
     }
     if let Some(ref ns) = opts.namespace {
-        app.namespace = Some(ns.clone());
+        if !app.from_ecosystem || app.namespace.is_none() {
+            app.namespace = Some(ns.clone());
+        }
     }
     if let Some(ref cwd) = opts.cwd {
-        app.cwd = Some(cwd.clone());
+        if !app.from_ecosystem || app.cwd.is_none() {
+            app.cwd = Some(cwd.clone());
+        }
     }
     if !opts.args.is_empty() {
         app.args.extend(opts.args.clone());
@@ -640,10 +879,14 @@ pub fn resolve_app_to_pm2_env(
         app.node_args.extend(opts.node_args.clone());
     }
     if let Some(inst) = opts.instances {
-        app.instances = Some(inst);
+        if !app.from_ecosystem {
+            app.instances = Some(inst);
+        }
     }
     if let Some(ref mode) = opts.exec_mode {
-        app.exec_mode = Some(mode.clone());
+        if !app.from_ecosystem || app.exec_mode.is_none() {
+            app.exec_mode = Some(mode.clone());
+        }
     }
     if let Some(ref out) = opts.output {
         app.out_file = Some(out.clone());
@@ -669,7 +912,9 @@ pub fn resolve_app_to_pm2_env(
     if let Some(ref ldf) = opts.log_date_format {
         app.log_date_format = Some(ldf.clone());
     }
-    if opts.time && app.log_date_format.is_none() {
+    if (opts.time || app.time.unwrap_or(false) || env::var("ASZ_MODE").is_ok())
+        && app.log_date_format.is_none()
+    {
         app.log_date_format = Some(DEFAULT_LOG_DATE_FORMAT.to_string());
     }
     if let Some(mmr) = opts.max_memory_restart {
@@ -688,9 +933,13 @@ pub fn resolve_app_to_pm2_env(
         app.min_uptime = Some(mu);
     }
     if let Some(ref cron) = opts.cron_restart {
-        app.cron_restart = Some(cron.clone());
+        if cron == "0" {
+            app.cron_restart = None;
+        } else {
+            app.cron_restart = Some(cron.clone());
+        }
     }
-    if opts.watch {
+    if opts.watch && (!app.from_ecosystem || app.watch.is_none()) {
         app.watch = Some(true);
     }
     if !opts.watch_paths.is_empty() {
@@ -719,9 +968,16 @@ pub fn resolve_app_to_pm2_env(
     }
     if opts.no_autorestart {
         app.autorestart = Some(false);
+    } else if opts.force_autorestart {
+        app.autorestart = Some(true);
     }
     if opts.no_autostart {
         app.autostart = Some(false);
+    } else if opts.force_autostart {
+        app.autostart = Some(true);
+    }
+    if let Some(sms) = opts.source_map_support {
+        app.source_map_support = Some(sms);
     }
     if opts.no_vizion {
         app.vizion = Some(false);
@@ -739,15 +995,27 @@ pub fn resolve_app_to_pm2_env(
         app.gid = Some(gid);
     }
     if let Some(ref user) = opts.user {
-        app.username = Some(user.clone());
+        if let Ok(u) = user.trim().parse::<u32>() {
+            app.uid = Some(u);
+        } else {
+            app.username = Some(user.clone());
+        }
     }
     if !opts.filter_env.is_empty() {
         app.filter_env.extend(opts.filter_env.clone());
     }
 
+    let caller_cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let base_cwd = match app.cwd {
-        Some(ref c) => PathBuf::from(c),
-        None => env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        Some(ref c) => {
+            let expanded = PmrPaths::expand_tilde(c);
+            if expanded.is_absolute() {
+                expanded
+            } else {
+                caller_cwd.join(expanded)
+            }
+        }
+        None => caller_cwd,
     };
     let pm_cwd = fs::canonicalize(&base_cwd).unwrap_or(base_cwd);
 
@@ -757,56 +1025,72 @@ pub fn resolve_app_to_pm2_env(
         script_str = "__pmr_serve__".to_string();
     }
 
-    let (pm_exec_path, resolved_interpreter) = if script_str == "__pmr_serve__" || script_str == "__pmr_web__" {
-        let self_exe = env::current_exe().unwrap_or_else(|_| PathBuf::from("pmr"));
-        (self_exe.to_string_lossy().to_string(), "none".to_string())
-    } else if script_str.contains(' ') && !pm_cwd.join(&script_str).exists() {
-        let orig_cmd = script_str.clone();
-        let mut new_args = vec!["-c".to_string(), orig_cmd];
-        new_args.extend(app.args.clone());
-        app.args = new_args;
-        ("/bin/sh".to_string(), "none".to_string())
-    } else {
-        let candidate = if Path::new(&script_str).is_absolute() {
-            PathBuf::from(&script_str)
-        } else {
-            pm_cwd.join(&script_str)
-        };
-
-        let resolved_path = if candidate.exists() {
-            if candidate.is_dir() {
-                // Check package.json main or index.js
-                resolve_directory_script(&candidate)?
-            } else {
-                fs::canonicalize(&candidate).unwrap_or(candidate)
+    let (pm_exec_path, resolved_interpreter) =
+        if script_str == "__pmr_serve__" || script_str == "__pmr_web__" {
+            let pmr_exe = PmrPaths::resolve_pmr_binary();
+            (pmr_exe.to_string_lossy().to_string(), "none".to_string())
+        } else if script_str.contains(' ')
+            && !Path::new(&script_str).exists()
+            && !pm_cwd.join(&script_str).exists()
+        {
+            let orig_cmd = script_str.clone();
+            if app.name.is_none() {
+                app.name = Some(orig_cmd.clone());
             }
-        } else if let Some(in_path) = which_in_path(&script_str) {
-            in_path
+            let shell_bin = which_in_path("bash")
+                .or_else(|| which_in_path("sh"))
+                .unwrap_or_else(|| PathBuf::from("/bin/sh"));
+            let mut new_args = vec!["-c".to_string(), orig_cmd];
+            new_args.extend(app.args.clone());
+            app.args = new_args;
+            if app.exec_mode.is_none() {
+                app.exec_mode = Some(FORK_MODE_ID.to_string());
+            }
+            (shell_bin.to_string_lossy().to_string(), "none".to_string())
         } else {
-            return Err(anyhow!("Script not found: {}", candidate.display()));
-        };
+            let expanded_script = PmrPaths::expand_tilde(&script_str);
+            let candidate = if expanded_script.is_absolute() {
+                expanded_script
+            } else {
+                pm_cwd.join(&expanded_script)
+            };
 
-        let ext = resolved_path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
-        let interp = match app.exec_interpreter.clone() {
-            Some(i) => i,
-            None => match interpreter_for_extension(ext) {
-                Some(i) => i.to_string(),
-                None => {
-                    if is_binary_file(&resolved_path) {
-                        "none".to_string()
-                    } else if has_shebang(&resolved_path) {
-                        extract_shebang(&resolved_path).unwrap_or_else(|| "bash".to_string())
-                    } else {
-                        "node".to_string()
-                    }
+            let resolved_path = if candidate.exists() {
+                if candidate.is_dir() {
+                    resolve_directory_script(&candidate)?
+                } else {
+                    fs::canonicalize(&candidate).unwrap_or(candidate)
                 }
-            },
+            } else if let Some(in_path) = which_in_path(&script_str) {
+                in_path
+            } else {
+                return Err(anyhow!("Script not found: {}", candidate.display()));
+            };
+
+            let ext = resolved_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("");
+            let mut interp = match app.exec_interpreter.clone() {
+                Some(i) => i,
+                None => match interpreter_for_extension(ext) {
+                    Some(i) => i.to_string(),
+                    None => {
+                        if is_binary_file(&resolved_path) {
+                            "none".to_string()
+                        } else if has_shebang(&resolved_path) {
+                            extract_shebang(&resolved_path).unwrap_or_else(|| "bash".to_string())
+                        } else {
+                            "node".to_string()
+                        }
+                    }
+                },
+            };
+            if interp == "python" && which_in_path("python").is_none() && which_in_path("python3").is_some() {
+                interp = "python3".to_string();
+            }
+            (resolved_path.to_string_lossy().to_string(), interp)
         };
-        (resolved_path.to_string_lossy().to_string(), interp)
-    };
 
     if script_str == "__pmr_serve__" && !app.args.iter().any(|a| a == "__serve") {
         app.args.insert(0, "__serve".to_string());
@@ -825,7 +1109,9 @@ pub fn resolve_app_to_pm2_env(
 
     if app.append_env_to_name.unwrap_or(false) {
         if let Some(ref env_name) = opts.env_name {
-            app_name = format!("{}-{}", app_name, env_name);
+            if !env_name.is_empty() && !app_name.ends_with(&format!("-{}", env_name)) {
+                app_name = format!("{}-{}", app_name, env_name);
+            }
         }
     }
 
@@ -848,7 +1134,7 @@ pub fn resolve_app_to_pm2_env(
         Some("fork") | Some("fork_mode") => FORK_MODE_ID.to_string(),
         _ => {
             if instances_specified
-                && (resolved_interpreter.contains("node") || resolved_interpreter.contains("bun") || resolved_instances > 1)
+                && (resolved_interpreter.contains("node") || resolved_interpreter.contains("bun"))
             {
                 CLUSTER_MODE_ID.to_string()
             } else {
@@ -857,42 +1143,66 @@ pub fn resolve_app_to_pm2_env(
         }
     };
 
-    // Environment merging: process.env (filtered) -> deploy.<env>.env -> app.env -> app.env_<env> -> opts.extra_env
+    // Resolve optional uid/gid/user
+    let mut resolved_uid: Option<u32> = app.uid;
+    let mut resolved_gid: Option<u32> = app.gid;
+    let mut resolved_user_home: Option<String> = None;
+
+    #[cfg(unix)]
+    {
+        if let Some(ref uname) = app.username {
+            let (u, g, home) = lookup_user_by_name(uname)?;
+            if resolved_uid.is_none() {
+                resolved_uid = Some(u);
+            }
+            if resolved_gid.is_none() {
+                resolved_gid = Some(g);
+            }
+            resolved_user_home = home;
+        } else if let Some(u) = resolved_uid {
+            if let Ok((_u, g, home, uname)) = lookup_user_by_uid(u) {
+                if resolved_gid.is_none() {
+                    resolved_gid = Some(g);
+                }
+                resolved_user_home = home;
+                if app.username.is_none() {
+                    app.username = uname;
+                }
+            }
+        }
+        if let Some(ref gname) = app.gid_name {
+            resolved_gid = Some(lookup_group_by_name(gname)?);
+        }
+    }
+
+    // Environment merging matching PM2:
+    // 1. process.env (filtered by filter_env)
+    // 2. deploy.<env>.env (when --env is passed)
+    // 3. app.env
+    // 4. PORT, PYTHONUNBUFFERED, HOME (if uid/user resolved), PM2_HOME, PMR_HOME
+    // 5. Module additional conf (from module_conf.json[app_name])
+    // 6. app.env_<env> (when --env is passed)
+    // 7. opts.extra_env
     let mut merged_env = BTreeMap::new();
     if !app.filter_env_all {
         for (k, v) in env::vars() {
-            if app.filter_env.iter().any(|f| k.contains(f)) {
+            if let Some(ref exact) = app.filter_env_exact {
+                if &k == exact {
+                    continue;
+                }
+            }
+            if app.filter_env.iter().any(|f| !f.is_empty() && k.contains(f)) {
                 continue;
             }
             merged_env.insert(k, v);
         }
     }
 
-    if let Some(ref env_name) = opts.env_name {
-        if let Some(d) = deploy_conf.get(env_name) {
-            for (k, v) in &d.env {
-                merged_env.insert(k.clone(), v.clone());
-            }
-        }
-    }
     for (k, v) in &app.env {
         merged_env.insert(k.clone(), v.clone());
     }
-    if let Some(ref env_name) = opts.env_name {
-        if let Some(variant) = app.env_variants.get(env_name) {
-            for (k, v) in variant {
-                merged_env.insert(k.clone(), v.clone());
-            }
-        } else {
-            eprintln!(
-                "{}Environment [{}] is not defined in process file",
-                crate::constants::PREFIX_MSG_WARNING,
-                env_name
-            );
-        }
-    }
-    for (k, v) in &opts.extra_env {
-        merged_env.insert(k.clone(), v.clone());
+    if let Some(ref home) = resolved_user_home {
+        merged_env.insert("HOME".to_string(), home.clone());
     }
     if let Some(port) = app.port {
         merged_env.insert("PORT".to_string(), port.to_string());
@@ -909,40 +1219,86 @@ pub fn resolve_app_to_pm2_env(
         paths.pm2_home.to_string_lossy().to_string(),
     );
 
-    // Module additional conf
-    if let Some(mod_conf) = ModuleConfiguration::get_sync(paths, &app_name) {
+    // Module additional conf: direct lookup on get_all_sync()[app_name] (no splitting on '.' or ':')
+    let all_mod_conf = ModuleConfiguration::get_all_sync(paths);
+    if let Some(mod_conf) = all_mod_conf.get(&app_name) {
         if let Some(obj) = mod_conf.as_object() {
             for (k, v) in obj {
-                let s = v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string());
+                let s = v
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| v.to_string());
                 merged_env.insert(k.clone(), s);
+            }
+            if let Ok(json_str) = serde_json::to_string(mod_conf) {
+                merged_env.insert(app_name.clone(), json_str);
             }
         }
     }
 
-    let formatted_name = PmrPaths::format_app_name(&app_name);
-    let out_log = app.out_file.unwrap_or_else(|| {
-        paths
-            .default_log_path
-            .join(format!("{}-out.log", formatted_name))
-            .to_string_lossy()
-            .to_string()
-    });
-    let err_log = app.error_file.unwrap_or_else(|| {
-        paths
-            .default_log_path
-            .join(format!("{}-error.log", formatted_name))
-            .to_string_lossy()
-            .to_string()
-    });
-    let pid_file = app.pid_file.unwrap_or_else(|| {
-        paths
-            .default_pid_path
-            .join(format!("{}.pid", formatted_name))
-            .to_string_lossy()
-            .to_string()
-    });
+    if let Some(ref env_name) = opts.env_name {
+        if let Some(d) = deploy_conf.get(env_name) {
+            for (k, v) in &d.env {
+                merged_env.insert(k.clone(), v.clone());
+            }
+        }
+        if let Some(variant) = app.env_variants.get(env_name) {
+            for (k, v) in variant {
+                merged_env.insert(k.clone(), v.clone());
+            }
+        } else {
+            println!(
+                "{}Environment [{}] is not defined in process file",
+                crate::constants::PREFIX_MSG_WARNING,
+                env_name
+            );
+        }
+    }
+    for (k, v) in &opts.extra_env {
+        merged_env.insert(k.clone(), v.clone());
+    }
 
-    let merge_logs = app.merge_logs.unwrap_or(!instances_specified && exec_mode == FORK_MODE_ID);
+    let formatted_name = PmrPaths::format_app_name(&app_name);
+    let out_log = resolve_log_or_pid_file(
+        app.out_file.as_deref(),
+        &paths.default_log_path,
+        &format!("{}-out.log", formatted_name),
+        &pm_cwd,
+    )?;
+    let err_log = resolve_log_or_pid_file(
+        app.error_file.as_deref(),
+        &paths.default_log_path,
+        &format!("{}-error.log", formatted_name),
+        &pm_cwd,
+    )?;
+    let pid_file = resolve_log_or_pid_file(
+        app.pid_file.as_deref(),
+        &paths.default_pid_path,
+        &format!("{}.pid", formatted_name),
+        &pm_cwd,
+    )?;
+    let combined_log = if let Some(ref lf) = app.log_file {
+        Some(resolve_log_or_pid_file(
+            Some(lf.as_str()),
+            &paths.default_log_path,
+            &format!("{}.log", formatted_name),
+            &pm_cwd,
+        )?)
+    } else if app.log_file_default {
+        Some(
+            paths
+                .default_log_path
+                .join(format!("{}.log", formatted_name))
+                .to_string_lossy()
+                .to_string(),
+        )
+    } else {
+        None
+    };
+
+    let merge_logs = app
+        .merge_logs
+        .unwrap_or(!instances_specified && exec_mode == FORK_MODE_ID);
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -968,7 +1324,7 @@ pub fn resolve_app_to_pm2_env(
         STOPPED_STATUS.to_string()
     };
 
-    let pm2_env = Pm2Env {
+    let mut pm2_env = Pm2Env {
         pm_id: 0,
         name: app_name,
         namespace: app.namespace.unwrap_or_else(|| "default".to_string()),
@@ -1001,7 +1357,7 @@ pub fn resolve_app_to_pm2_env(
         increment_var: app.increment_var,
         pm_out_log_path: out_log,
         pm_err_log_path: err_log,
-        pm_log_path: app.log_file,
+        pm_log_path: combined_log,
         pm_pid_path: pid_file,
         merge_logs,
         disable_logs: app.disable_logs.unwrap_or(false),
@@ -1023,8 +1379,8 @@ pub fn resolve_app_to_pm2_env(
         node_version: None,
         _pm2_version: PMR_VERSION.to_string(),
         username,
-        uid: app.uid.or_else(|| Some( unsafe { libc::getuid() } )),
-        gid: app.gid.or_else(|| Some( unsafe { libc::getgid() } )),
+        uid: resolved_uid,
+        gid: resolved_gid,
         vizion,
         versioning,
         pmx: app.pmx.unwrap_or(true),
@@ -1035,7 +1391,9 @@ pub fn resolve_app_to_pm2_env(
         axm_options: serde_json::json!({}),
         axm_dynamic: serde_json::json!({}),
         env: merged_env,
+        extra: BTreeMap::new(),
     };
+    pm2_env.sync_flattened_env();
 
     Ok((pm2_env, resolved_instances))
 }
@@ -1080,7 +1438,6 @@ pub fn is_binary_file(path: &Path) -> bool {
     if sample.is_empty() {
         return false;
     }
-    // Check ELF / Mach-O / PE magic or null bytes
     if sample.starts_with(b"\x7fELF")
         || sample.starts_with(&[0xcf, 0xfa, 0xed, 0xfe])
         || sample.starts_with(&[0xfe, 0xed, 0xfa, 0xcf])
@@ -1175,7 +1532,8 @@ pub fn find_git_versioning(cwd: &Path) -> Option<VersioningInfo> {
     if revision.is_empty() {
         return None;
     }
-    let branch = run_git(&["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_else(|| "main".to_string());
+    let branch =
+        run_git(&["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_else(|| "main".to_string());
     let comment = run_git(&["log", "-1", "--pretty=%s"]).unwrap_or_default();
     let url = run_git(&["config", "--get", "remote.origin.url"]).unwrap_or_default();
     let update_time = Some(chrono::Utc::now().to_rfc3339());
@@ -1195,21 +1553,63 @@ pub fn find_git_versioning(cwd: &Path) -> Option<VersioningInfo> {
 pub struct ModuleConfiguration;
 
 impl ModuleConfiguration {
-    fn split_key(key: &str) -> Vec<&str> {
-        if key.contains(':') {
-            key.split(':').collect()
-        } else if key.contains('.') {
-            key.split('.').collect()
+    pub fn split_key(key: &str) -> Vec<String> {
+        let sep = if key.contains('.') {
+            Some('.')
+        } else if key.contains(':') {
+            Some(':')
         } else {
-            vec![key]
+            None
+        };
+        let Some(delim) = sep else {
+            return vec![key.to_string()];
+        };
+        let mut out = Vec::new();
+        let mut current = String::new();
+        let mut in_quotes = false;
+        for ch in key.chars() {
+            if ch == '"' {
+                in_quotes = !in_quotes;
+            } else if ch == delim && !in_quotes {
+                if !current.is_empty() {
+                    out.push(std::mem::take(&mut current));
+                }
+            } else {
+                current.push(ch);
+            }
         }
+        if !current.is_empty() {
+            out.push(current);
+        }
+        out
+    }
+
+    fn read_checked(paths: &PmrPaths) -> Result<Value> {
+        if !paths.pm2_module_conf_file.exists() {
+            return Ok(serde_json::json!({}));
+        }
+        let raw = fs::read_to_string(&paths.pm2_module_conf_file)?;
+        if raw.trim().is_empty() {
+            return Ok(serde_json::json!({}));
+        }
+        let val: Value = serde_json::from_str(&raw)
+            .with_context(|| format!("Invalid JSON in {}", paths.pm2_module_conf_file.display()))?;
+        Ok(val)
+    }
+
+    fn write_atomic(paths: &PmrPaths, val: &Value) -> Result<()> {
+        let serialized = serde_json::to_string_pretty(val)?;
+        let tmp = paths.pm2_module_conf_file.with_extension(format!(
+            "json.tmp.{}",
+            std::process::id()
+        ));
+        fs::write(&tmp, serialized)?;
+        fs::rename(&tmp, &paths.pm2_module_conf_file)?;
+        Ok(())
     }
 
     pub fn get_all_sync(paths: &PmrPaths) -> Value {
-        let Ok(raw) = fs::read_to_string(&paths.pm2_module_conf_file) else {
-            return serde_json::json!({});
-        };
-        serde_json::from_str(&raw).unwrap_or_else(|_| serde_json::json!({}))
+        Self::read_checked(paths).unwrap_or_else(|_| serde_json::json!({}))
     }
 
     pub fn get_sync(paths: &PmrPaths, key: &str) -> Option<Value> {
@@ -1220,54 +1620,70 @@ impl ModuleConfiguration {
         let parts = Self::split_key(key);
         let mut cur = &all;
         for part in parts {
-            cur = cur.get(part)?;
+            cur = cur.get(&part)?;
         }
         Some(cur.clone())
     }
 
     pub fn set_sync(paths: &PmrPaths, key: &str, value: &str) -> Result<Value> {
-        let mut all = Self::get_all_sync(paths);
-        if key == "all" {
+        Self::set_value_sync(paths, key, Value::String(value.to_string()))
+    }
+
+    pub fn set_value_sync(paths: &PmrPaths, key: &str, value: Value) -> Result<Value> {
+        let mut all = Self::read_checked(paths)?;
+        if !all.is_object() {
             all = serde_json::json!({});
-        } else {
-            let parts = Self::split_key(key);
-            if parts.len() == 2 {
-                let obj = all.as_object_mut().ok_or_else(|| anyhow!("Invalid module_conf root"))?;
-                let sub = obj
-                    .entry(parts[0].to_string())
-                    .or_insert_with(|| serde_json::json!({}));
-                if !sub.is_object() {
-                    *sub = serde_json::json!({});
+        }
+        let parts = Self::split_key(key);
+        if parts.is_empty() {
+            return Ok(all);
+        }
+        let mut cur = &mut all;
+        for (i, part) in parts.iter().enumerate() {
+            if i + 1 == parts.len() {
+                if let Some(obj) = cur.as_object_mut() {
+                    obj.insert(part.clone(), value);
                 }
-                sub.as_object_mut()
-                    .unwrap()
-                    .insert(parts[1].to_string(), Value::String(value.to_string()));
+                break;
             } else {
-                let obj = all.as_object_mut().ok_or_else(|| anyhow!("Invalid module_conf root"))?;
-                obj.insert(key.to_string(), Value::String(value.to_string()));
+                if !cur.get(part).map(|v| v.is_object()).unwrap_or(false) {
+                    if let Some(obj) = cur.as_object_mut() {
+                        obj.insert(part.clone(), serde_json::json!({}));
+                    }
+                }
+                cur = cur.get_mut(part).unwrap();
             }
         }
-        let serialized = serde_json::to_string_pretty(&all)?;
-        fs::write(&paths.pm2_module_conf_file, serialized)?;
+        Self::write_atomic(paths, &all)?;
         Ok(all)
     }
 
     pub fn unset_sync(paths: &PmrPaths, key: &str) -> Result<Value> {
-        let mut all = Self::get_all_sync(paths);
+        let mut all = Self::read_checked(paths)?;
         if key == "all" {
             all = serde_json::json!({});
         } else {
             let parts = Self::split_key(key);
-            if parts.len() == 2 {
-                if let Some(sub) = all.get_mut(parts[0]).and_then(|v| v.as_object_mut()) {
-                    sub.remove(parts[1]);
+            if !parts.is_empty() {
+                let mut cur = &mut all;
+                for (i, part) in parts.iter().enumerate() {
+                    if i + 1 == parts.len() {
+                        if let Some(obj) = cur.as_object_mut() {
+                            obj.remove(part);
+                        }
+                        break;
+                    } else if let Some(next) = cur.get_mut(part) {
+                        if !next.is_object() {
+                            break;
+                        }
+                        cur = next;
+                    } else {
+                        break;
+                    }
                 }
-            } else if let Some(obj) = all.as_object_mut() {
-                obj.remove(key);
             }
         }
-        let serialized = serde_json::to_string_pretty(&all)?;
-        fs::write(&paths.pm2_module_conf_file, serialized)?;
+        Self::write_atomic(paths, &all)?;
         Ok(all)
     }
 
@@ -1278,6 +1694,6 @@ impl ModuleConfiguration {
                 Self::set_sync(paths, &pair[0], &pair[1])?;
             }
         }
-        Ok(Self::get_all_sync(paths))
+        Self::read_checked(paths)
     }
 }

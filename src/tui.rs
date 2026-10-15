@@ -1,5 +1,6 @@
 use anyhow::Result;
 use crossterm::{
+    cursor,
     event::{self, Event as CEvent, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -15,46 +16,102 @@ use ratatui::{
 use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::io::{self, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::client::PmrClient;
 use crate::process::ProcessDescription;
 use crate::ux::{bytes_to_size, time_since};
 
+struct TerminalCleanupGuard;
+
+impl Drop for TerminalCleanupGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen, cursor::Show);
+    }
+}
+
+/// Interactive 4-pane dashboard (`pmr monit` / `pmr dashboard`), matching `lib/API/Dashboard.js`.
 pub async fn run_dashboard(client: &PmrClient) -> Result<()> {
     enable_raw_mode()?;
+    let _cleanup_guard = TerminalCleanupGuard;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
+
+    // Install panic hook to guarantee terminal restoration on panic
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen, cursor::Show);
+        prev_hook(info);
+    }));
+
+    let stop_flag = Arc::new(AtomicBool::new(false));
+    #[cfg(unix)]
+    {
+        let stop_sig = Arc::clone(&stop_flag);
+        tokio::spawn(async move {
+            use tokio::signal::unix::{signal, SignalKind};
+            if let Ok(mut sigterm) = signal(SignalKind::terminate()) {
+                let _ = sigterm.recv().await;
+                stop_sig.store(true, Ordering::SeqCst);
+            }
+        });
+    }
+
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let res = dashboard_loop(&mut terminal, client).await;
+    let res = run_dashboard_loop(&mut terminal, client, &stop_flag).await;
 
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
+    let _ = disable_raw_mode();
+    let _ = execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        cursor::Show
+    );
+    let _ = terminal.show_cursor();
+
     res
 }
 
-async fn dashboard_loop(
+async fn run_dashboard_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     client: &PmrClient,
+    stop_flag: &Arc<AtomicBool>,
 ) -> Result<()> {
     let mut processes: Vec<ProcessDescription> = client.list().await.unwrap_or_default();
     let mut selected_idx: usize = 0;
     let mut active_pane: usize = 0; // 0: list, 1: logs, 2: metrics, 3: metadata
+    let mut scroll_offsets: [u16; 4] = [0; 4];
     let mut logs_by_id: BTreeMap<u32, VecDeque<(bool, String)>> = BTreeMap::new();
 
     // Seed initial logs from disk
     for p in &processes {
         let mut q = VecDeque::new();
         if let Ok(content) = fs::read_to_string(&p.pm2_env.pm_out_log_path) {
-            for line in content.lines().rev().take(50).collect::<Vec<_>>().into_iter().rev() {
+            for line in content
+                .lines()
+                .rev()
+                .take(100)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+            {
                 q.push_back((false, line.to_string()));
             }
         }
         if let Ok(content) = fs::read_to_string(&p.pm2_env.pm_err_log_path) {
-            for line in content.lines().rev().take(25).collect::<Vec<_>>().into_iter().rev() {
+            for line in content
+                .lines()
+                .rev()
+                .take(50)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+            {
                 q.push_back((true, line.to_string()));
             }
         }
@@ -65,17 +122,27 @@ async fn dashboard_loop(
     let mut last_refresh = Instant::now();
 
     loop {
+        if stop_flag.load(Ordering::SeqCst) {
+            break;
+        }
+
         if let Some(ref mut rx) = bus_rx {
             while let Ok(ev) = rx.try_recv() {
                 if ev.event == "log:out" || ev.event == "log:err" {
                     if let Some(id) = ev.process.pm_id.as_u64().map(|n| n as u32) {
                         let is_err = ev.event == "log:err";
                         if let Some(data) = ev.data.get("data").and_then(|d| d.as_str()) {
+                            let is_selected = processes
+                                .get(selected_idx)
+                                .map(|p| p.pm_id == id)
+                                .unwrap_or(false);
                             let q = logs_by_id.entry(id).or_default();
                             for l in data.lines() {
                                 q.push_back((is_err, l.to_string()));
-                                if q.len() > 200 {
+                                if q.len() > 400 {
                                     q.pop_front();
+                                } else if is_selected && scroll_offsets[1] > 0 {
+                                    scroll_offsets[1] = scroll_offsets[1].saturating_add(1);
                                 }
                             }
                         }
@@ -119,7 +186,9 @@ async fn dashboard_loop(
 
             let pane_border = |idx: usize| -> Style {
                 if active_pane == idx {
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::DarkGray)
                 }
@@ -138,16 +207,25 @@ async fn dashboard_loop(
                     let line = Line::from(vec![
                         Span::styled(
                             format!("[{:>2}] ", p.pm_id),
-                            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(Color::Cyan)
+                                .add_modifier(Modifier::BOLD),
                         ),
                         Span::styled(
                             format!("{:<14} ", p.name),
-                            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(Color::White)
+                                .add_modifier(Modifier::BOLD),
                         ),
-                        Span::raw(format!("Mem: {:>5.1} MB  CPU: {:>4.1}%  ", mem_mb, p.monit.cpu)),
+                        Span::raw(format!(
+                            "Mem: {:>5.1} MB  CPU: {:>4.1}%  ",
+                            mem_mb, p.monit.cpu
+                        )),
                         Span::styled(
                             p.pm2_env.status.clone(),
-                            Style::default().fg(status_color).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(status_color)
+                                .add_modifier(Modifier::BOLD),
                         ),
                     ]);
                     ListItem::new(line)
@@ -184,12 +262,19 @@ async fn dashboard_loop(
                 .and_then(|sp| logs_by_id.get(&sp.pm_id))
                 .map(|q| {
                     let max_rows = top_chunks[1].height.saturating_sub(2) as usize;
-                    let skip = q.len().saturating_sub(max_rows);
+                    let total_skip = q
+                        .len()
+                        .saturating_sub(max_rows)
+                        .saturating_sub(scroll_offsets[1] as usize);
                     q.iter()
-                        .skip(skip)
+                        .skip(total_skip)
+                        .take(max_rows)
                         .map(|(is_err, text)| {
                             let prefix_color = if *is_err { Color::Red } else { Color::Green };
-                            let name = selected_proc.as_ref().map(|p| p.name.as_str()).unwrap_or("");
+                            let name = selected_proc
+                                .as_ref()
+                                .map(|p| p.name.as_str())
+                                .unwrap_or("");
                             Line::from(vec![
                                 Span::styled(
                                     format!("{} > ", name),
@@ -244,12 +329,14 @@ async fn dashboard_loop(
                     ]));
                 }
             }
-            let metrics_widget = Paragraph::new(metric_lines).block(
-                Block::default()
-                    .title(" Custom Metrics ")
-                    .borders(Borders::ALL)
-                    .border_style(pane_border(2)),
-            );
+            let metrics_widget = Paragraph::new(metric_lines)
+                .scroll((scroll_offsets[2], 0))
+                .block(
+                    Block::default()
+                        .title(" Custom Metrics ")
+                        .borders(Borders::ALL)
+                        .border_style(pane_border(2)),
+                );
             f.render_widget(metrics_widget, bottom_chunks[0]);
 
             // 4. Bottom-Right: Metadata
@@ -274,35 +361,45 @@ async fn dashboard_loop(
                     ("Exec cwd", e.pm_cwd.clone()),
                     (
                         "Watch & reload",
-                        if e.watch { "✔".to_string() } else { "✘".to_string() },
+                        if e.watch {
+                            "✔".to_string()
+                        } else {
+                            "✘".to_string()
+                        },
                     ),
                 ];
                 for (k, v) in pairs {
                     meta_lines.push(Line::from(vec![
                         Span::styled(
                             format!("{:<16}: ", k),
-                            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(Color::Cyan)
+                                .add_modifier(Modifier::BOLD),
                         ),
                         Span::raw(v),
                     ]));
                 }
             }
-            let meta_widget = Paragraph::new(meta_lines).block(
-                Block::default()
-                    .title(" Metadata ")
-                    .borders(Borders::ALL)
-                    .border_style(pane_border(3)),
-            );
+            let meta_widget = Paragraph::new(meta_lines)
+                .scroll((scroll_offsets[3], 0))
+                .block(
+                    Block::default()
+                        .title(" Metadata ")
+                        .borders(Borders::ALL)
+                        .border_style(pane_border(3)),
+                );
             f.render_widget(meta_widget, bottom_chunks[1]);
 
             // 5. Status Bar
             let help_line = Line::from(vec![
                 Span::raw(
-                    " left/right/tab: switch boards | up/down: select | r: restart | s: stop | q/Ctrl-C: exit ",
+                    " left/right/tab: switch boards | up/down: select/scroll | r: restart | s: stop | q/Ctrl-C: exit ",
                 ),
                 Span::styled(
                     "  PMR Dashboard ",
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
                 ),
             ]);
             f.render_widget(Paragraph::new(help_line), root_chunks[2]);
@@ -320,13 +417,45 @@ async fn dashboard_loop(
                         active_pane = (active_pane + 1) % 4;
                     }
                     KeyCode::Up | KeyCode::Char('k') => {
-                        if !processes.is_empty() && selected_idx > 0 {
-                            selected_idx -= 1;
+                        if active_pane == 0 {
+                            if !processes.is_empty() && selected_idx > 0 {
+                                selected_idx -= 1;
+                                scroll_offsets[1] = 0;
+                            }
+                        } else if active_pane == 1 {
+                            scroll_offsets[1] = scroll_offsets[1].saturating_add(1);
+                        } else {
+                            scroll_offsets[active_pane] =
+                                scroll_offsets[active_pane].saturating_sub(1);
                         }
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
-                        if !processes.is_empty() && selected_idx + 1 < processes.len() {
-                            selected_idx += 1;
+                        if active_pane == 0 {
+                            if !processes.is_empty() && selected_idx + 1 < processes.len() {
+                                selected_idx += 1;
+                                scroll_offsets[1] = 0;
+                            }
+                        } else if active_pane == 1 {
+                            scroll_offsets[1] = scroll_offsets[1].saturating_sub(1);
+                        } else {
+                            scroll_offsets[active_pane] =
+                                scroll_offsets[active_pane].saturating_add(1);
+                        }
+                    }
+                    KeyCode::PageUp => {
+                        if active_pane == 1 {
+                            scroll_offsets[1] = scroll_offsets[1].saturating_add(10);
+                        } else if active_pane > 1 {
+                            scroll_offsets[active_pane] =
+                                scroll_offsets[active_pane].saturating_sub(5);
+                        }
+                    }
+                    KeyCode::PageDown => {
+                        if active_pane == 1 {
+                            scroll_offsets[1] = scroll_offsets[1].saturating_sub(10);
+                        } else if active_pane > 1 {
+                            scroll_offsets[active_pane] =
+                                scroll_offsets[active_pane].saturating_add(5);
                         }
                     }
                     KeyCode::Char('r') => {
@@ -338,7 +467,7 @@ async fn dashboard_loop(
                     }
                     KeyCode::Char('s') => {
                         if let Some(ref sp) = selected_proc {
-                            let _ = client.stop(&sp.pm_id.to_string()).await;
+                            let _ = client.stop(&sp.pm_id.to_string(), &Default::default()).await;
                         }
                     }
                     _ => {}
@@ -351,7 +480,7 @@ async fn dashboard_loop(
 }
 
 /// Legacy terminal bar monitor (`pmr imonit`), matching `lib/API/Monit.js`.
-pub async fn run_imonit(client: &PmrClient) -> Result<()> {
+pub async fn run_imonit(client: &PmrClient, use_color: bool) -> Result<()> {
     let mut sys = sysinfo::System::new_all();
     sys.refresh_memory();
     let total_mem = sys.total_memory().max(1);
@@ -359,32 +488,49 @@ pub async fn run_imonit(client: &PmrClient) -> Result<()> {
     loop {
         let procs = client.list().await?;
         print!("\x1b[2J\x1b[H");
-        println!(
-            "\x1b[32m⌬ PMR \x1b[39mmonitoring\x1b[96m (Press Ctrl-C to exit)\x1b[39m\n"
-        );
+        if use_color {
+            println!(
+                "\x1b[32m⌬ PMR \x1b[39mmonitoring\x1b[96m (Press Ctrl-C to exit)\x1b[39m\n"
+            );
+        } else {
+            println!("PMR monitoring (Press Ctrl-C to exit)\n");
+        }
         for p in &procs {
             let cpu_pct = p.monit.cpu.clamp(0.0, 100.0);
             let cpu_filled = ((cpu_pct / 100.0) * 30.0).round() as usize;
-            let cpu_bar = format!(
-                "\x1b[44m{}\x1b[49m{}",
-                " ".repeat(cpu_filled),
-                "-".repeat(30usize.saturating_sub(cpu_filled))
-            );
+            let cpu_bar = if use_color {
+                format!(
+                    "\x1b[44m{}\x1b[49m{}",
+                    " ".repeat(cpu_filled),
+                    "-".repeat(30usize.saturating_sub(cpu_filled))
+                )
+            } else {
+                format!(
+                    "{}{}",
+                    "#".repeat(cpu_filled),
+                    "-".repeat(30usize.saturating_sub(cpu_filled))
+                )
+            };
 
             let mem_ratio = ((p.monit.memory as f64) / (total_mem as f64 / 5.0)).clamp(0.0, 1.0);
             let mem_filled = (mem_ratio * 30.0).round() as usize;
-            let mem_bar = format!(
-                "\x1b[41m{}\x1b[49m{}",
-                " ".repeat(mem_filled),
-                "-".repeat(30usize.saturating_sub(mem_filled))
-            );
+            let mem_bar = if use_color {
+                format!(
+                    "\x1b[41m{}\x1b[49m{}",
+                    " ".repeat(mem_filled),
+                    "-".repeat(30usize.saturating_sub(mem_filled))
+                )
+            } else {
+                format!(
+                    "{}{}",
+                    "#".repeat(mem_filled),
+                    "-".repeat(30usize.saturating_sub(mem_filled))
+                )
+            };
 
             println!(
                 " ● {:<20} [{:>2}] [{}] [{}]",
-                p.name,
-                p.pm_id,
-                p.pm2_env.exec_mode,
-                p.pm2_env.status
+                p.name, p.pm_id, p.pm2_env.exec_mode, p.pm2_env.status
             );
             println!("   CPU: [{}] {:>5.1}%", cpu_bar, p.monit.cpu);
             println!(
@@ -394,6 +540,10 @@ pub async fn run_imonit(client: &PmrClient) -> Result<()> {
             );
         }
         io::stdout().flush()?;
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => break,
+            _ = tokio::time::sleep(Duration::from_millis(500)) => {}
+        }
     }
+    Ok(())
 }

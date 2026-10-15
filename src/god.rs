@@ -12,19 +12,24 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use sysinfo::{Pid, ProcessesToUpdate, System};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command as TokioCommand;
-use tokio::sync::{broadcast, mpsc, Mutex, Notify};
+use tokio::sync::{broadcast, mpsc, watch, Mutex, Notify};
 use uuid::Uuid;
 
 use crate::config::{find_git_versioning, find_package_version};
 use crate::constants::{
-    CLUSTER_MODE_ID, ERRORED_STATUS, EXP_BACKOFF_RESET_TIMER_MS, LAUNCHING_STATUS, ONLINE_STATUS,
-    STOPPED_STATUS, STOPPING_STATUS, WAITING_RESTART,
+    CLUSTER_MODE_ID, ERRORED_STATUS, EXP_BACKOFF_RESET_TIMER_MS, GRACEFUL_TIMEOUT_MS,
+    LAUNCHING_STATUS, ONLINE_STATUS, STOPPED_STATUS, STOPPING_STATUS, WAITING_RESTART,
 };
 use crate::paths::PmrPaths;
 use crate::process::{AxmAction, AxmMetric, Monit, Pm2Env, ProcessDescription};
 use crate::protocol::{BusEvent, BusProcessRef};
+
+pub struct ClusterBalancer {
+    pub workers: Arc<std::sync::Mutex<BTreeMap<u32, u16>>>,
+    pub shutdown: Arc<Notify>,
+}
 
 pub struct ManagedProcess {
     pub pm2_env: Pm2Env,
@@ -33,15 +38,16 @@ pub struct ManagedProcess {
     pub stdin_tx: Option<mpsc::UnboundedSender<String>>,
     pub ipc_tx: Option<mpsc::UnboundedSender<String>>,
     pub stop_notify: Arc<Notify>,
-    pub ready_notify: Arc<Notify>,
-    pub log_reload_notify: Arc<Notify>,
+    pub ready_tx: watch::Sender<bool>,
+    pub exit_tx: watch::Sender<bool>,
+    pub log_reload_tx: watch::Sender<u64>,
     pub watcher: Option<RecommendedWatcher>,
     pub generation: u64,
 }
 
 pub struct God {
     pub clusters_db: BTreeMap<u32, ManagedProcess>,
-    pub cluster_balancers: BTreeMap<u16, Arc<std::sync::Mutex<BTreeMap<u32, u16>>>>,
+    pub cluster_balancers: BTreeMap<u16, ClusterBalancer>,
     pub next_id: u32,
     pub pm2_being_killed: bool,
     pub started_at: u64,
@@ -73,7 +79,28 @@ impl God {
         }))
     }
 
+    pub fn unregister_worker(&mut self, pm_id: u32) {
+        let mut empty_ports = Vec::new();
+        for (&port, balancer) in &self.cluster_balancers {
+            let mut guard = balancer.workers.lock().unwrap();
+            guard.remove(&pm_id);
+            if guard.is_empty() {
+                empty_ports.push(port);
+            }
+        }
+        for port in empty_ports {
+            if let Some(balancer) = self.cluster_balancers.remove(&port) {
+                balancer.shutdown.notify_one();
+            }
+        }
+    }
+
     pub fn emit_bus_event(&self, event: &str, pm_id: Value, name: &str, namespace: &str, data: Value) {
+        let status = data
+            .get("event")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let manually = data.get("manually").and_then(|v| v.as_bool());
         let _ = self.bus_tx.send(BusEvent {
             event: event.to_string(),
             at: now_ms(),
@@ -84,6 +111,8 @@ impl God {
                 rev: None,
             },
             data,
+            status,
+            manually,
         });
     }
 
@@ -143,7 +172,9 @@ impl God {
                 .map(|p| p as u32)
                 .unwrap_or(proc.pid);
 
-            if proc.pm2_env.status == ONLINE_STATUS && target_pid > 0 {
+            if (proc.pm2_env.status == ONLINE_STATUS || proc.pm2_env.status == LAUNCHING_STATUS)
+                && target_pid > 0
+            {
                 if let Some(p) = self.sys.process(Pid::from_u32(target_pid)) {
                     proc.monit.memory = p.memory();
                     proc.monit.cpu = (p.cpu_usage() * 10.0).round() / 10.0;
@@ -155,6 +186,7 @@ impl God {
                 proc.monit.memory = 0;
                 proc.monit.cpu = 0.0;
             }
+            proc.pm2_env.sync_flattened_env();
         }
     }
 
@@ -201,20 +233,24 @@ pub async fn prepare_and_launch(
             let inst_idx = g.allocate_instance_index(&env.name, Some(id));
             env.pm_id = id;
             env.node_app_instance = Some(inst_idx);
-            env.env
-                .insert(env.instance_var.clone(), inst_idx.to_string());
-            env.env
-                .insert("NODE_APP_INSTANCE".to_string(), inst_idx.to_string());
+            let inst_var_name = if env.instance_var.is_empty() {
+                "NODE_APP_INSTANCE".to_string()
+            } else {
+                env.instance_var.clone()
+            };
+            if inst_var_name != "NODE_APP_INSTANCE" {
+                env.env.remove("NODE_APP_INSTANCE");
+            }
+            env.env.insert(inst_var_name, inst_idx.to_string());
 
             if let Some(ref inc_var) = env.increment_var {
-                if let Some(base_val) = template_env.env.get(inc_var) {
-                    if let Ok(base_num) = base_val.parse::<i64>() {
-                        env.env.insert(
-                            inc_var.clone(),
-                            (base_num + inst_idx as i64).to_string(),
-                        );
-                    }
-                }
+                let base_num = template_env
+                    .env
+                    .get(inc_var)
+                    .and_then(|v| v.parse::<i64>().ok())
+                    .unwrap_or(0);
+                env.env
+                    .insert(inc_var.clone(), (base_num + inst_idx as i64).to_string());
             }
 
             suffix_paths_for_instance(&mut env);
@@ -222,6 +258,11 @@ pub async fn prepare_and_launch(
             if !autostart {
                 env.status = STOPPED_STATUS.to_string();
             }
+            env.sync_flattened_env();
+
+            let (ready_tx, _) = watch::channel(false);
+            let (exit_tx, _) = watch::channel(true);
+            let (log_reload_tx, _) = watch::channel(0u64);
 
             let mp = ManagedProcess {
                 pm2_env: env.clone(),
@@ -230,20 +271,30 @@ pub async fn prepare_and_launch(
                 stdin_tx: None,
                 ipc_tx: None,
                 stop_notify: Arc::new(Notify::new()),
-                ready_notify: Arc::new(Notify::new()),
-                log_reload_notify: Arc::new(Notify::new()),
+                ready_tx,
+                exit_tx,
+                log_reload_tx,
                 watcher: None,
                 generation: 0,
             };
             g.clusters_db.insert(id, mp);
-            if env.watch {
+            if env.watch && autostart {
                 setup_watcher_for_process(Arc::clone(&god), &mut g, id);
             }
             (id, autostart)
         };
 
         if autostart {
-            start_process_id(Arc::clone(&god), pm_id).await?;
+            if let Err(e) = start_process_id(Arc::clone(&god), pm_id).await {
+                let mut g = god.lock().await;
+                if let Some(mut removed) = g.clusters_db.remove(&pm_id) {
+                    removed.watcher = None;
+                }
+                if g.clusters_db.is_empty() {
+                    g.next_id = 0;
+                }
+                return Err(e);
+            }
         }
 
         let g_desc = {
@@ -257,272 +308,383 @@ pub async fn prepare_and_launch(
     Ok(results)
 }
 
-fn suffix_paths_for_instance(env: &mut Pm2Env) {
-    let id_suffix = format!("-{}.log", env.pm_id);
+fn strip_numeric_suffix_before_ext<'a>(path: &'a str, ext: &str) -> Option<&'a str> {
+    let stem = path.strip_suffix(ext)?;
+    if let Some((prefix, digits)) = stem.rsplit_once('-') {
+        if !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()) {
+            return Some(prefix);
+        }
+    }
+    Some(stem)
+}
+
+pub fn suffix_paths_for_instance(env: &mut Pm2Env) {
     if !env.merge_logs {
-        if env.pm_out_log_path != "/dev/null" && !env.pm_out_log_path.ends_with(&id_suffix) {
-            if let Some(stem) = env.pm_out_log_path.strip_suffix(".log") {
-                env.pm_out_log_path = format!("{}-{}.log", stem, env.pm_id);
+        if env.pm_out_log_path != "/dev/null" {
+            if let Some(base) = strip_numeric_suffix_before_ext(&env.pm_out_log_path, ".log") {
+                env.pm_out_log_path = format!("{}-{}.log", base, env.pm_id);
             }
         }
-        if env.pm_err_log_path != "/dev/null" && !env.pm_err_log_path.ends_with(&id_suffix) {
-            if let Some(stem) = env.pm_err_log_path.strip_suffix(".log") {
-                env.pm_err_log_path = format!("{}-{}.log", stem, env.pm_id);
-            } else if let Some(stem) = env.pm_err_log_path.strip_suffix(".err") {
-                env.pm_err_log_path = format!("{}-{}.err", stem, env.pm_id);
+        if env.pm_err_log_path != "/dev/null" {
+            if let Some(base) = strip_numeric_suffix_before_ext(&env.pm_err_log_path, ".log") {
+                env.pm_err_log_path = format!("{}-{}.log", base, env.pm_id);
+            } else if let Some(base) = strip_numeric_suffix_before_ext(&env.pm_err_log_path, ".err")
+            {
+                env.pm_err_log_path = format!("{}-{}.err", base, env.pm_id);
             }
         }
         if let Some(ref mut log_p) = env.pm_log_path {
-            if log_p != "/dev/null" && !log_p.ends_with(&id_suffix) {
-                if let Some(stem) = log_p.strip_suffix(".log") {
-                    *log_p = format!("{}-{}.log", stem, env.pm_id);
+            if log_p != "/dev/null" {
+                if let Some(base) = strip_numeric_suffix_before_ext(log_p, ".log") {
+                    *log_p = format!("{}-{}.log", base, env.pm_id);
                 }
             }
         }
     }
-    let pid_suffix = format!("-{}.pid", env.pm_id);
-    if !env.pm_pid_path.ends_with(&pid_suffix) {
-        if let Some(stem) = env.pm_pid_path.strip_suffix(".pid") {
-            env.pm_pid_path = format!("{}-{}.pid", stem, env.pm_id);
+    if env.pm_pid_path != "/dev/null" {
+        if let Some(base) = strip_numeric_suffix_before_ext(&env.pm_pid_path, ".pid") {
+            env.pm_pid_path = format!("{}-{}.pid", base, env.pm_id);
         }
     }
 }
 
-pub fn start_process_id(god: Arc<Mutex<God>>, id: u32) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ProcessDescription>> + Send>> {
+pub fn start_process_id(
+    god: Arc<Mutex<God>>,
+    id: u32,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ProcessDescription>> + Send>> {
     Box::pin(async move {
-    let (
-        mut env,
-        paths,
-        stop_notify,
-        ready_notify,
-        log_reload_notify,
-        generation,
-    ) = {
-        let mut g = god.lock().await;
-        let paths = g.paths.clone();
-        let proc = g
-            .clusters_db
-            .get_mut(&id)
-            .ok_or_else(|| anyhow!("Process {} not found", id))?;
+        let (
+            mut env,
+            paths,
+            bus_tx,
+            stop_notify,
+            ready_tx,
+            mut ready_rx,
+            exit_tx,
+            log_reload_rx,
+            generation,
+        ) = {
+            let mut g = god.lock().await;
+            let paths = g.paths.clone();
+            let bus_tx = g.bus_tx.clone();
+            let proc = g
+                .clusters_db
+                .get_mut(&id)
+                .ok_or_else(|| anyhow!("Process {} not found", id))?;
 
-        if proc.pm2_env.status == ONLINE_STATUS && proc.pid > 0 {
-            return Ok(ProcessDescription {
-                pid: proc.pid,
-                name: proc.pm2_env.name.clone(),
-                pm2_env: proc.pm2_env.clone(),
-                pm_id: proc.pm2_env.pm_id,
-                monit: proc.monit.clone(),
+            if proc.pm2_env.status == ONLINE_STATUS && proc.pid > 0 {
+                return Ok(ProcessDescription {
+                    pid: proc.pid,
+                    name: proc.pm2_env.name.clone(),
+                    pm2_env: proc.pm2_env.clone(),
+                    pm_id: proc.pm2_env.pm_id,
+                    monit: proc.monit.clone(),
+                });
+            }
+
+            proc.generation += 1;
+            let gen = proc.generation;
+            proc.stop_notify = Arc::new(Notify::new());
+            let (r_tx, r_rx) = watch::channel(false);
+            let (e_tx, _) = watch::channel(false);
+            proc.ready_tx = r_tx.clone();
+            proc.exit_tx = e_tx.clone();
+            let log_reload_rx = proc.log_reload_tx.subscribe();
+
+            proc.pm2_env.pm_uptime = now_ms();
+            if proc.pm2_env.created_at.is_none() {
+                proc.pm2_env.created_at = Some(proc.pm2_env.pm_uptime);
+            }
+            proc.pm2_env.status = if proc.pm2_env.wait_ready {
+                LAUNCHING_STATUS.to_string()
+            } else {
+                ONLINE_STATUS.to_string()
+            };
+
+            // Refresh version & git metadata
+            proc.pm2_env.version = find_package_version(
+                Path::new(&proc.pm2_env.pm_exec_path),
+                Path::new(&proc.pm2_env.pm_cwd),
+            );
+            if proc.pm2_env.vizion {
+                proc.pm2_env.versioning = find_git_versioning(Path::new(&proc.pm2_env.pm_cwd));
+            }
+            proc.pm2_env.sync_flattened_env();
+
+            if proc.pm2_env.watch && proc.watcher.is_none() {
+                setup_watcher_for_process(Arc::clone(&god), &mut g, id);
+            }
+
+            let proc = g.clusters_db.get(&id).unwrap();
+            (
+                proc.pm2_env.clone(),
+                paths,
+                bus_tx,
+                Arc::clone(&proc.stop_notify),
+                r_tx,
+                r_rx,
+                e_tx,
+                log_reload_rx,
+                gen,
+            )
+        };
+
+        // Build command & arguments
+        let (program, cmd_args) =
+            if env.exec_interpreter == "none" || env.exec_interpreter.is_empty() {
+                (env.pm_exec_path.clone(), env.args.clone())
+            } else {
+                let mut a = Vec::new();
+                a.extend(env.node_args.clone());
+                a.push(env.pm_exec_path.clone());
+                a.extend(env.args.clone());
+                (env.exec_interpreter.clone(), a)
+            };
+
+        let mut cmd = TokioCommand::new(&program);
+        cmd.args(&cmd_args)
+            .current_dir(&env.pm_cwd)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        #[cfg(unix)]
+        {
+            if let Some(uid) = env.uid {
+                cmd.uid(uid);
+            }
+            if let Some(gid) = env.gid {
+                cmd.gid(gid);
+            }
+            unsafe {
+                cmd.pre_exec(|| {
+                    libc::setpgid(0, 0);
+                    Ok(())
+                });
+            }
+        }
+
+        // Populate child environment
+        for (k, v) in &env.env {
+            cmd.env(k, v);
+        }
+        cmd.env("pm_id", env.pm_id.to_string());
+        cmd.env("name", &env.name);
+        cmd.env("namespace", &env.namespace);
+        cmd.env("exec_mode", &env.exec_mode);
+        cmd.env("exec_interpreter", &env.exec_interpreter);
+        cmd.env("pm_exec_path", &env.pm_exec_path);
+        cmd.env("pm_cwd", &env.pm_cwd);
+        cmd.env("pm_out_log_path", &env.pm_out_log_path);
+        cmd.env("pm_err_log_path", &env.pm_err_log_path);
+        cmd.env("pm_pid_path", &env.pm_pid_path);
+        cmd.env("pm_uptime", env.pm_uptime.to_string());
+        cmd.env("status", &env.status);
+        cmd.env("username", &env.username);
+        cmd.env("vizion", env.vizion.to_string());
+        cmd.env("automation", env.pmx.to_string());
+        cmd.env("pmx", env.pmx.to_string());
+        cmd.env("autostart", env.autostart.to_string());
+        cmd.env("autorestart", env.autorestart.to_string());
+        cmd.env("treekill", env.treekill.to_string());
+        cmd.env("instance_var", &env.instance_var);
+        cmd.env("restart_time", env.restart_time.to_string());
+        cmd.env("unstable_restarts", env.unstable_restarts.to_string());
+        cmd.env("created_at", env.created_at.unwrap_or(env.pm_uptime).to_string());
+        if let Some(inst) = env.node_app_instance {
+            let iv = if env.instance_var.is_empty() {
+                "NODE_APP_INSTANCE"
+            } else {
+                &env.instance_var
+            };
+            cmd.env(iv, inst.to_string());
+        }
+        cmd.env("PM2_HOME", paths.pm2_home.to_string_lossy().to_string());
+        cmd.env("PMR_HOME", paths.pm2_home.to_string_lossy().to_string());
+        cmd.env("PM2_USAGE", "CLI");
+        cmd.env("PMR_PARENT_PID", std::process::id().to_string());
+        cmd.env(
+            "PMR_NODE_IPC_SOCK",
+            paths.node_ipc_sock.to_string_lossy().to_string(),
+        );
+
+        if (program.contains("node") || program.contains("bun"))
+            && paths.node_preload_shim_path.exists()
+        {
+            let shim_flag = format!("--require {}", paths.node_preload_shim_path.display());
+            let existing = env.env.get("NODE_OPTIONS").cloned().unwrap_or_default();
+            let combined = if existing.is_empty() {
+                shim_flag
+            } else if !existing.contains("pmr-preload.cjs") {
+                format!("{} {}", existing, shim_flag)
+            } else {
+                existing
+            };
+            cmd.env("NODE_OPTIONS", combined);
+        }
+
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                let mut g = god.lock().await;
+                let _ = exit_tx.send(true);
+                if let Some(proc) = g.clusters_db.get_mut(&id) {
+                    proc.pid = 0;
+                    proc.pm2_env.status = ERRORED_STATUS.to_string();
+                    proc.pm2_env.sync_flattened_env();
+                }
+                g.log_pm2(&format!(
+                    "Failed to spawn App [{}:{}] ({}): {}",
+                    env.name, id, program, e
+                ));
+                g.emit_bus_event(
+                    "process:event",
+                    json!(id),
+                    &env.name,
+                    &env.namespace,
+                    json!({
+                        "event": "exit",
+                        "manually": false,
+                        "process": { "pm_id": id, "name": env.name, "status": ERRORED_STATUS }
+                    }),
+                );
+                return Err(anyhow!(
+                    "Failed to spawn '{}' ({}): {}",
+                    env.name,
+                    program,
+                    e
+                ));
+            }
+        };
+
+        let pid = child.id().unwrap_or(0);
+        if env.pm_pid_path != "/dev/null" {
+            if let Some(parent) = Path::new(&env.pm_pid_path).parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            let _ = fs::write(&env.pm_pid_path, pid.to_string());
+        }
+
+        let (stdin_tx, mut stdin_rx) = mpsc::unbounded_channel::<String>();
+        if let Some(mut child_stdin) = child.stdin.take() {
+            tokio::spawn(async move {
+                while let Some(line) = stdin_rx.recv().await {
+                    let mut payload = line;
+                    if !payload.ends_with('\n') {
+                        payload.push('\n');
+                    }
+                    if child_stdin.write_all(payload.as_bytes()).await.is_err() {
+                        break;
+                    }
+                    let _ = child_stdin.flush().await;
+                }
             });
         }
 
-        proc.generation += 1;
-        let gen = proc.generation;
-        proc.stop_notify = Arc::new(Notify::new());
-        proc.ready_notify = Arc::new(Notify::new());
-        proc.pm2_env.pm_uptime = now_ms();
-        if proc.pm2_env.created_at.is_none() {
-            proc.pm2_env.created_at = Some(proc.pm2_env.pm_uptime);
+        // Spawn stdout & stderr log streaming tasks
+        if let Some(child_stdout) = child.stdout.take() {
+            spawn_log_reader(
+                bus_tx.clone(),
+                id,
+                env.name.clone(),
+                env.namespace.clone(),
+                "out",
+                env.pm_out_log_path.clone(),
+                env.pm_log_path.clone(),
+                env.disable_logs,
+                env.log_type.clone(),
+                env.log_date_format.clone(),
+                log_reload_rx.clone(),
+                child_stdout,
+            );
         }
-        proc.pm2_env.status = if proc.pm2_env.wait_ready {
-            LAUNCHING_STATUS.to_string()
-        } else {
-            ONLINE_STATUS.to_string()
-        };
-
-        // Refresh version & git metadata
-        proc.pm2_env.version = find_package_version(
-            Path::new(&proc.pm2_env.pm_exec_path),
-            Path::new(&proc.pm2_env.pm_cwd),
-        );
-        if proc.pm2_env.vizion {
-            proc.pm2_env.versioning = find_git_versioning(Path::new(&proc.pm2_env.pm_cwd));
+        if let Some(child_stderr) = child.stderr.take() {
+            spawn_log_reader(
+                bus_tx,
+                id,
+                env.name.clone(),
+                env.namespace.clone(),
+                "err",
+                env.pm_err_log_path.clone(),
+                env.pm_log_path.clone(),
+                env.disable_logs,
+                env.log_type.clone(),
+                env.log_date_format.clone(),
+                log_reload_rx,
+                child_stderr,
+            );
         }
 
-        (
-            proc.pm2_env.clone(),
-            paths,
-            Arc::clone(&proc.stop_notify),
-            Arc::clone(&proc.ready_notify),
-            Arc::clone(&proc.log_reload_notify),
-            gen,
-        )
-    };
-
-    // Build command & arguments
-    let (program, cmd_args) = if env.exec_interpreter == "none" || env.exec_interpreter.is_empty() {
-        (env.pm_exec_path.clone(), env.args.clone())
-    } else {
-        let mut a = Vec::new();
-        a.extend(env.node_args.clone());
-        a.push(env.pm_exec_path.clone());
-        a.extend(env.args.clone());
-        (env.exec_interpreter.clone(), a)
-    };
-
-    let mut cmd = TokioCommand::new(&program);
-    cmd.args(&cmd_args)
-        .current_dir(&env.pm_cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    // Put child in its own process group on Unix so terminal Ctrl-C or treekill works cleanly
-    #[cfg(unix)]
-    unsafe {
-        cmd.pre_exec(|| {
-            libc::setpgid(0, 0);
-            Ok(())
-        });
-    }
-
-    // Populate child environment
-    for (k, v) in &env.env {
-        cmd.env(k, v);
-    }
-    cmd.env("pm_id", env.pm_id.to_string());
-    cmd.env("name", &env.name);
-    cmd.env("namespace", &env.namespace);
-    cmd.env("exec_mode", &env.exec_mode);
-    cmd.env("pm_exec_path", &env.pm_exec_path);
-    cmd.env("pm_cwd", &env.pm_cwd);
-    cmd.env("pm_out_log_path", &env.pm_out_log_path);
-    cmd.env("pm_err_log_path", &env.pm_err_log_path);
-    cmd.env("pm_pid_path", &env.pm_pid_path);
-    cmd.env("PM2_HOME", paths.pm2_home.to_string_lossy().to_string());
-    cmd.env("PMR_HOME", paths.pm2_home.to_string_lossy().to_string());
-    cmd.env("PM2_USAGE", "CLI");
-    cmd.env("PM2_PROGRAMMATIC", "true");
-    cmd.env(
-        "PMR_NODE_IPC_SOCK",
-        paths.node_ipc_sock.to_string_lossy().to_string(),
-    );
-
-    if program.contains("node") && paths.node_preload_shim_path.exists() {
-        let shim_flag = format!("--require {}", paths.node_preload_shim_path.display());
-        let existing = env
-            .env
-            .get("NODE_OPTIONS")
-            .cloned()
-            .unwrap_or_default();
-        let combined = if existing.is_empty() {
-            shim_flag
-        } else if !existing.contains("pmr-preload.cjs") {
-            format!("{} {}", existing, shim_flag)
-        } else {
-            existing
-        };
-        cmd.env("NODE_OPTIONS", combined);
-    }
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| anyhow!("Failed to spawn '{}' ({}): {}", env.name, program, e))?;
-
-    let pid = child.id().unwrap_or(0);
-    let _ = fs::write(&env.pm_pid_path, pid.to_string());
-
-    let (stdin_tx, mut stdin_rx) = mpsc::unbounded_channel::<String>();
-    if let Some(mut child_stdin) = child.stdin.take() {
-        tokio::spawn(async move {
-            while let Some(line) = stdin_rx.recv().await {
-                let mut payload = line;
-                if !payload.ends_with('\n') {
-                    payload.push('\n');
-                }
-                if child_stdin.write_all(payload.as_bytes()).await.is_err() {
-                    break;
-                }
-                let _ = child_stdin.flush().await;
+        {
+            let mut g = god.lock().await;
+            if let Some(proc) = g.clusters_db.get_mut(&id) {
+                proc.pid = pid;
+                proc.stdin_tx = Some(stdin_tx);
+                proc.pm2_env.sync_flattened_env();
+                env = proc.pm2_env.clone();
             }
-        });
-    }
-
-    // Spawn stdout & stderr log streaming tasks
-    if let Some(child_stdout) = child.stdout.take() {
-        spawn_log_reader(
-            Arc::clone(&god),
-            id,
-            env.name.clone(),
-            env.namespace.clone(),
-            "out",
-            env.pm_out_log_path.clone(),
-            env.pm_log_path.clone(),
-            env.disable_logs,
-            env.log_type.clone(),
-            env.log_date_format.clone(),
-            Arc::clone(&log_reload_notify),
-            child_stdout,
-        );
-    }
-    if let Some(child_stderr) = child.stderr.take() {
-        spawn_log_reader(
-            Arc::clone(&god),
-            id,
-            env.name.clone(),
-            env.namespace.clone(),
-            "err",
-            env.pm_err_log_path.clone(),
-            env.pm_log_path.clone(),
-            env.disable_logs,
-            env.log_type.clone(),
-            env.log_date_format.clone(),
-            Arc::clone(&log_reload_notify),
-            child_stderr,
-        );
-    }
-
-    let desc = {
-        let mut g = god.lock().await;
-        if let Some(proc) = g.clusters_db.get_mut(&id) {
-            proc.pid = pid;
-            proc.stdin_tx = Some(stdin_tx);
-            env = proc.pm2_env.clone();
-        }
-        g.log_pm2(&format!(
-            "App [{}:{}] starting in -{}-",
-            env.name, id, env.exec_mode
-        ));
-        g.emit_bus_event(
-            "process:event",
-            json!(id),
-            &env.name,
-            &env.namespace,
-            json!({
-                "event": "start",
-                "manually": true,
-                "process": { "pm_id": id, "name": env.name, "status": env.status }
-            }),
-        );
-        if !env.wait_ready {
-            g.log_pm2(&format!("App [{}:{}] online", env.name, id));
+            g.log_pm2(&format!(
+                "App [{}:{}] starting in -{}-",
+                env.name, id, env.exec_mode
+            ));
             g.emit_bus_event(
                 "process:event",
                 json!(id),
                 &env.name,
                 &env.namespace,
                 json!({
-                    "event": "online",
-                    "manually": false,
-                    "process": { "pm_id": id, "name": env.name, "status": ONLINE_STATUS }
+                    "event": "start",
+                    "manually": true,
+                    "process": { "pm_id": id, "name": env.name, "status": env.status }
                 }),
             );
+            if !env.wait_ready {
+                if env.exec_mode != CLUSTER_MODE_ID {
+                    let _ = ready_tx.send(true);
+                }
+                g.log_pm2(&format!("App [{}:{}] online", env.name, id));
+                g.emit_bus_event(
+                    "process:event",
+                    json!(id),
+                    &env.name,
+                    &env.namespace,
+                    json!({
+                        "event": "online",
+                        "manually": false,
+                        "process": { "pm_id": id, "name": env.name, "status": ONLINE_STATUS }
+                    }),
+                );
+            }
         }
-        g.get_formatted_process(id)
-            .ok_or_else(|| anyhow!("Process {} missing", id))?
-    };
 
-    // If wait_ready is true, wait up to listen_timeout for ready_notify before marking online
-    if env.wait_ready {
-        let god_ready = Arc::clone(&god);
-        let ready_n = Arc::clone(&ready_notify);
-        let listen_timeout = env.listen_timeout;
+        // Spawn exit watcher task before waiting for ready so early crashes are caught immediately
+        let god_exit = Arc::clone(&god);
+        let mut exit_rx_for_ready = exit_tx.subscribe();
         tokio::spawn(async move {
-            let _ = tokio::time::timeout(Duration::from_millis(listen_timeout), ready_n.notified())
+            let status_res = child.wait().await;
+            let _ = exit_tx.send(true);
+            let exit_code = status_res.ok().and_then(|s| s.code()).unwrap_or(-1);
+            handle_process_exit(god_exit, id, generation, exit_code, stop_notify).await;
+        });
+
+        // If wait_ready is true, wait up to listen_timeout for ready_tx (or early child exit)
+        if env.wait_ready {
+            let listen_timeout = env.listen_timeout.max(100);
+            if !*ready_rx.borrow() {
+                let _ = tokio::time::timeout(Duration::from_millis(listen_timeout), async {
+                    tokio::select! {
+                        _ = ready_rx.changed() => {}
+                        _ = exit_rx_for_ready.changed() => {}
+                    }
+                })
                 .await;
-            let mut g = god_ready.lock().await;
+            }
+            let mut g = god.lock().await;
             if let Some(proc) = g.clusters_db.get_mut(&id) {
-                if proc.generation == generation && proc.pm2_env.status == LAUNCHING_STATUS {
+                if !*exit_rx_for_ready.borrow() && proc.generation == generation && proc.pm2_env.status == LAUNCHING_STATUS {
                     proc.pm2_env.status = ONLINE_STATUS.to_string();
+                    proc.pm2_env.sync_flattened_env();
+                    let _ = proc.ready_tx.send(true);
                     let name = proc.pm2_env.name.clone();
                     let ns = proc.pm2_env.namespace.clone();
                     g.log_pm2(&format!("App [{}:{}] online", name, id));
@@ -539,24 +701,17 @@ pub fn start_process_id(god: Arc<Mutex<God>>, id: u32) -> std::pin::Pin<Box<dyn 
                     );
                 }
             }
-        });
-    }
+        }
 
-    // Spawn exit watcher task
-    let god_exit = Arc::clone(&god);
-    tokio::spawn(async move {
-        let status_res = child.wait().await;
-        let exit_code = status_res.ok().and_then(|s| s.code()).unwrap_or(-1);
-        handle_process_exit(god_exit, id, generation, exit_code, stop_notify).await;
-    });
-
-    Ok(desc)
+        let mut g = god.lock().await;
+        g.get_formatted_process(id)
+            .ok_or_else(|| anyhow!("Process {} missing", id))
     })
 }
 
 #[allow(clippy::too_many_arguments)]
 fn spawn_log_reader<R>(
-    god: Arc<Mutex<God>>,
+    bus_tx: broadcast::Sender<BusEvent>,
     pm_id: u32,
     app_name: String,
     namespace: String,
@@ -566,15 +721,19 @@ fn spawn_log_reader<R>(
     disable_logs: bool,
     log_type: Option<String>,
     log_date_format: Option<String>,
-    reload_notify: Arc<Notify>,
-    reader: R,
+    mut reload_rx: watch::Receiver<u64>,
+    mut reader: R,
 ) where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {
     tokio::spawn(async move {
-        let mut lines = BufReader::new(reader).lines();
+        if disable_logs {
+            let _ = tokio::io::copy(&mut reader, &mut tokio::io::sink()).await;
+            return;
+        }
+
         let open_file = |p: &str| -> Option<std::fs::File> {
-            if disable_logs || p.is_empty() || p.eq_ignore_ascii_case("/dev/null") {
+            if p.is_empty() || p.eq_ignore_ascii_case("/dev/null") || p == "NULL" {
                 return None;
             }
             if let Some(parent) = Path::new(p).parent() {
@@ -591,66 +750,193 @@ fn spawn_log_reader<R>(
             "log:out"
         };
 
+        let emit_line = |raw_line: &str,
+                         primary_file: &mut Option<std::fs::File>,
+                         combined_file: &mut Option<std::fs::File>| {
+            let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
+            let formatted = if log_type.as_deref() == Some("json") {
+                let obj = json!({
+                    "message": line,
+                    "timestamp": Utc::now().to_rfc3339(),
+                    "type": stream_type,
+                    "process_id": pm_id,
+                    "app_name": app_name,
+                });
+                format!("{}\n", obj)
+            } else if let Some(ref fmt_str) = log_date_format {
+                if fmt_str.is_empty() {
+                    format!("{}\n", line)
+                } else {
+                    let chrono_fmt = convert_dayjs_to_chrono(fmt_str);
+                    let ts = Local::now().format(&chrono_fmt).to_string();
+                    format!("{}: {}\n", ts, line)
+                }
+            } else {
+                format!("{}\n", line)
+            };
+
+            if let Some(ref mut f) = primary_file {
+                let _ = f.write_all(formatted.as_bytes());
+            }
+            if let Some(ref mut cf) = combined_file {
+                let _ = cf.write_all(formatted.as_bytes());
+            }
+
+            let _ = bus_tx.send(BusEvent {
+                event: bus_event_name.to_string(),
+                at: now_ms(),
+                process: BusProcessRef {
+                    pm_id: json!(pm_id),
+                    name: app_name.clone(),
+                    namespace: namespace.clone(),
+                    rev: None,
+                },
+                data: json!({ "data": formatted }),
+                status: None,
+                manually: None,
+            });
+        };
+
+        let mut pending: Vec<u8> = Vec::with_capacity(4096);
+        let mut buf = [0u8; 4096];
+        let mut reload_open = true;
+
         loop {
             tokio::select! {
-                _ = reload_notify.notified() => {
-                    primary_file = open_file(&primary_path);
-                    combined_file = combined_path.as_deref().and_then(open_file);
-                }
-                line_res = lines.next_line() => {
-                    let Ok(Some(line)) = line_res else {
-                        break;
-                    };
-                    let formatted = if log_type.as_deref() == Some("json") {
-                        let obj = json!({
-                            "message": line,
-                            "timestamp": Utc::now().to_rfc3339(),
-                            "type": stream_type,
-                            "process_id": pm_id,
-                            "app_name": app_name,
-                        });
-                        format!("{}\n", obj)
-                    } else if let Some(ref fmt_str) = log_date_format {
-                        let chrono_fmt = convert_dayjs_to_chrono(fmt_str);
-                        let ts = Local::now().format(&chrono_fmt).to_string();
-                        format!("{}: {}\n", ts, line)
+                changed = reload_rx.changed(), if reload_open => {
+                    if changed.is_ok() {
+                        primary_file = open_file(&primary_path);
+                        combined_file = combined_path.as_deref().and_then(open_file);
                     } else {
-                        format!("{}\n", line)
-                    };
-
-                    if let Some(ref mut f) = primary_file {
-                        let _ = f.write_all(formatted.as_bytes());
+                        reload_open = false;
                     }
-                    if let Some(ref mut cf) = combined_file {
-                        let _ = cf.write_all(formatted.as_bytes());
+                }
+                read_res = reader.read(&mut buf) => {
+                    match read_res {
+                        Ok(0) | Err(_) => {
+                            if !pending.is_empty() {
+                                let line = String::from_utf8_lossy(&pending);
+                                emit_line(&line, &mut primary_file, &mut combined_file);
+                                pending.clear();
+                            }
+                            break;
+                        }
+                        Ok(n) => {
+                            pending.extend_from_slice(&buf[..n]);
+                            while let Some(pos) = pending.iter().position(|&b| b == b'\n') {
+                                let line_bytes: Vec<u8> = pending.drain(..=pos).collect();
+                                let without_nl = &line_bytes[..line_bytes.len() - 1];
+                                let line = String::from_utf8_lossy(without_nl);
+                                emit_line(&line, &mut primary_file, &mut combined_file);
+                            }
+                        }
                     }
-
-                    let g = god.lock().await;
-                    g.emit_bus_event(
-                        bus_event_name,
-                        json!(pm_id),
-                        &app_name,
-                        &namespace,
-                        json!({ "data": formatted }),
-                    );
                 }
             }
         }
     });
 }
 
-fn convert_dayjs_to_chrono(fmt: &str) -> String {
-    if fmt.contains('%') {
-        return fmt.to_string();
+pub fn convert_dayjs_to_chrono(fmt: &str) -> String {
+    let mut out = String::with_capacity(fmt.len() + 8);
+    let bytes = fmt.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'[' {
+            if let Some(end) = fmt[i + 1..].find(']') {
+                let literal = &fmt[i + 1..i + 1 + end];
+                for ch in literal.chars() {
+                    if ch == '%' {
+                        out.push_str("%%");
+                    } else {
+                        out.push(ch);
+                    }
+                }
+                i += end + 2;
+                continue;
+            }
+        }
+        let rem = &fmt[i..];
+        if rem.starts_with("YYYY") {
+            out.push_str("%Y");
+            i += 4;
+        } else if rem.starts_with("YY") {
+            out.push_str("%y");
+            i += 2;
+        } else if rem.starts_with("MMMM") {
+            out.push_str("%B");
+            i += 4;
+        } else if rem.starts_with("MMM") {
+            out.push_str("%b");
+            i += 3;
+        } else if rem.starts_with("MM") {
+            out.push_str("%m");
+            i += 2;
+        } else if rem.starts_with('M') {
+            out.push_str("%-m");
+            i += 1;
+        } else if rem.starts_with("dddd") {
+            out.push_str("%A");
+            i += 4;
+        } else if rem.starts_with("ddd") {
+            out.push_str("%a");
+            i += 3;
+        } else if rem.starts_with("DD") {
+            out.push_str("%d");
+            i += 2;
+        } else if rem.starts_with('D') {
+            out.push_str("%-d");
+            i += 1;
+        } else if rem.starts_with("HH") {
+            out.push_str("%H");
+            i += 2;
+        } else if rem.starts_with('H') {
+            out.push_str("%-H");
+            i += 1;
+        } else if rem.starts_with("hh") {
+            out.push_str("%I");
+            i += 2;
+        } else if rem.starts_with('h') {
+            out.push_str("%-I");
+            i += 1;
+        } else if rem.starts_with("mm") {
+            out.push_str("%M");
+            i += 2;
+        } else if rem.starts_with('m') {
+            out.push_str("%-M");
+            i += 1;
+        } else if rem.starts_with("ss") {
+            out.push_str("%S");
+            i += 2;
+        } else if rem.starts_with('s') {
+            out.push_str("%-S");
+            i += 1;
+        } else if rem.starts_with("SSS") {
+            out.push_str("%3f");
+            i += 3;
+        } else if rem.starts_with("ZZ") {
+            out.push_str("%z");
+            i += 2;
+        } else if rem.starts_with('Z') {
+            out.push_str("%:z");
+            i += 1;
+        } else if rem.starts_with('A') {
+            out.push_str("%p");
+            i += 1;
+        } else if rem.starts_with('a') {
+            out.push_str("%P");
+            i += 1;
+        } else {
+            let ch = rem.chars().next().unwrap();
+            if ch == '%' {
+                out.push_str("%%");
+            } else {
+                out.push(ch);
+            }
+            i += ch.len_utf8();
+        }
     }
-    fmt.replace("YYYY", "%Y")
-        .replace("MM", "%m")
-        .replace("DD", "%d")
-        .replace("HH", "%H")
-        .replace("mm", "%M")
-        .replace("ss", "%S")
-        .replace("ZZ", "%z")
-        .replace('Z', "%:z")
+    out
 }
 
 async fn handle_process_exit(
@@ -665,12 +951,19 @@ async fn handle_process_exit(
         if g.pm2_being_killed {
             return;
         }
+        let is_current_gen = g
+            .clusters_db
+            .get(&id)
+            .map(|p| p.generation == generation)
+            .unwrap_or(false);
+        if !is_current_gen {
+            return;
+        }
+        g.unregister_worker(id);
+
         let Some(proc) = g.clusters_db.get_mut(&id) else {
             return;
         };
-        if proc.generation != generation {
-            return;
-        }
 
         let _ = fs::remove_file(&proc.pm2_env.pm_pid_path);
         proc.pid = 0;
@@ -693,6 +986,7 @@ async fn handle_process_exit(
             if proc.pm2_env.status != ERRORED_STATUS {
                 proc.pm2_env.status = STOPPED_STATUS.to_string();
             }
+            proc.pm2_env.sync_flattened_env();
             let st = proc.pm2_env.status.clone();
             g.log_pm2(&format!(
                 "App [{}:{}] exited with code [{}]",
@@ -714,11 +1008,10 @@ async fn handle_process_exit(
 
         let now = now_ms();
         let uptime = now.saturating_sub(proc.pm2_env.pm_uptime);
-        let since_created = now.saturating_sub(proc.pm2_env.created_at.unwrap_or(now));
         let min_uptime = proc.pm2_env.min_uptime;
         let max_restarts = proc.pm2_env.max_restarts;
 
-        if since_created < (min_uptime.saturating_mul(max_restarts as u64)) && uptime < min_uptime {
+        if uptime < min_uptime {
             proc.pm2_env.unstable_restarts += 1;
         }
 
@@ -726,6 +1019,7 @@ async fn handle_process_exit(
             proc.pm2_env.status = ERRORED_STATUS.to_string();
             proc.pm2_env.unstable_restarts = 0;
             proc.pm2_env.created_at = None;
+            proc.pm2_env.sync_flattened_env();
             let exec_p = proc.pm2_env.pm_exec_path.clone();
             g.log_pm2(&format!(
                 "Script {} had too many unstable restarts ({}). Stopped. \"errored\"",
@@ -762,6 +1056,7 @@ async fn handle_process_exit(
         if delay > 0 {
             proc.pm2_env.status = WAITING_RESTART.to_string();
         }
+        proc.pm2_env.sync_flattened_env();
         let st = proc.pm2_env.status.clone();
         g.log_pm2(&format!(
             "App [{}:{}] exited with code [{}] via signal, restarting in {}ms",
@@ -799,6 +1094,7 @@ async fn handle_process_exit(
                     && proc.pm2_env.status != ERRORED_STATUS
                 {
                     proc.pm2_env.restart_time += 1;
+                    proc.pm2_env.sync_flattened_env();
                     true
                 } else {
                     false
@@ -814,17 +1110,20 @@ async fn handle_process_exit(
 }
 
 pub async fn stop_process_id(god: Arc<Mutex<God>>, id: u32) -> Result<ProcessDescription> {
-    let (pid, env, ipc_tx, stop_notify) = {
+    let (pid, env, ipc_tx, stop_notify, exit_rx) = {
         let mut g = god.lock().await;
+        g.unregister_worker(id);
         let proc = g
             .clusters_db
             .get_mut(&id)
             .ok_or_else(|| anyhow!("Process {} not found", id))?;
 
         proc.stop_notify.notify_waiters();
+        proc.watcher = None;
         if proc.pm2_env.status == STOPPED_STATUS || proc.pid == 0 {
             proc.pm2_env.status = STOPPED_STATUS.to_string();
             proc.pid = 0;
+            proc.pm2_env.sync_flattened_env();
             let _ = fs::remove_file(&proc.pm2_env.pm_pid_path);
             return Ok(ProcessDescription {
                 pid: 0,
@@ -836,18 +1135,21 @@ pub async fn stop_process_id(god: Arc<Mutex<God>>, id: u32) -> Result<ProcessDes
         }
 
         proc.pm2_env.status = STOPPING_STATUS.to_string();
+        proc.pm2_env.sync_flattened_env();
         let pid = proc.pid;
         let env = proc.pm2_env.clone();
         let ipc_tx = proc.ipc_tx.clone();
         let stop_n = Arc::clone(&proc.stop_notify);
+        let exit_rx = proc.exit_tx.subscribe();
         g.log_pm2(&format!("Stopping app:{}:{}", env.name, id));
-        (pid, env, ipc_tx, stop_n)
+        (pid, env, ipc_tx, stop_n, exit_rx)
     };
 
     stop_notify.notify_waiters();
-    kill_process_gracefully(pid, &env, ipc_tx).await;
+    kill_process_gracefully(pid, &env, ipc_tx, Some(exit_rx)).await;
 
     let mut g = god.lock().await;
+    g.unregister_worker(id);
     if let Some(proc) = g.clusters_db.get_mut(&id) {
         proc.pid = 0;
         proc.stdin_tx = None;
@@ -856,6 +1158,7 @@ pub async fn stop_process_id(god: Arc<Mutex<God>>, id: u32) -> Result<ProcessDes
         proc.pm2_env.axm_actions.clear();
         proc.pm2_env.axm_monitor.clear();
         proc.pm2_env.status = STOPPED_STATUS.to_string();
+        proc.pm2_env.sync_flattened_env();
         let _ = fs::remove_file(&proc.pm2_env.pm_pid_path);
         let name = proc.pm2_env.name.clone();
         let ns = proc.pm2_env.namespace.clone();
@@ -880,6 +1183,7 @@ pub async fn kill_process_gracefully(
     pid: u32,
     env: &Pm2Env,
     ipc_tx: Option<mpsc::UnboundedSender<String>>,
+    mut exit_rx: Option<watch::Receiver<bool>>,
 ) {
     if pid == 0 {
         return;
@@ -891,47 +1195,74 @@ pub async fn kill_process_gracefully(
         Vec::new()
     };
 
-    // Step 1: shutdown_with_message OR SIGINT
+    // Step 1: shutdown_with_message OR SIGINT (or PM2_KILL_SIGNAL)
+    let default_sig = std::env::var("PM2_KILL_SIGNAL")
+        .ok()
+        .and_then(|s| parse_unix_signal(&s))
+        .unwrap_or(libc::SIGINT);
+
     if env.shutdown_with_message {
-        if let Some(tx) = ipc_tx {
+        if let Some(ref tx) = ipc_tx {
             let _ = tx.send(json!({ "__pmr_raw": "shutdown" }).to_string());
         } else {
-            send_signal_to_tree(pid, &descendants, libc::SIGINT);
+            send_signal_to_tree(pid, &descendants, default_sig);
         }
     } else {
-        let sig = std::env::var("PM2_KILL_SIGNAL")
-            .ok()
-            .and_then(|s| parse_unix_signal(&s))
-            .unwrap_or(libc::SIGINT);
-        send_signal_to_tree(pid, &descendants, sig);
+        send_signal_to_tree(pid, &descendants, default_sig);
     }
 
     let retry_ms = env.kill_retry_time.max(25);
     let timeout_ms = env.kill_timeout.max(100);
-    let mut elapsed = 0;
-    while elapsed < timeout_ms {
-        if !process_is_alive(pid) {
-            // Ensure descendants are also cleaned up
-            for &d in &descendants {
-                if process_is_alive(d) {
-                    unsafe {
-                        libc::kill(d as i32, libc::SIGKILL);
-                    }
-                }
-            }
-            return;
+    let start_instant = tokio::time::Instant::now();
+    let deadline = start_instant + Duration::from_millis(timeout_ms);
+
+    loop {
+        let root_exited = match exit_rx {
+            Some(ref rx) => *rx.borrow() || !process_is_alive(pid),
+            None => !process_is_alive(pid),
+        };
+        if root_exited {
+            break;
         }
-        tokio::time::sleep(Duration::from_millis(retry_ms)).await;
-        elapsed += retry_ms;
+        if tokio::time::Instant::now() >= deadline {
+            break;
+        }
+        if let Some(ref mut rx) = exit_rx {
+            let _ = tokio::time::timeout(
+                Duration::from_millis(retry_ms),
+                rx.changed(),
+            )
+            .await;
+        } else {
+            tokio::time::sleep(Duration::from_millis(retry_ms)).await;
+        }
     }
 
-    // Step 2: Escalate to SIGKILL
+    // If shutdown_with_message was used and process is still alive after timeout, send SIGINT first if soft reload
+    let root_still_alive = match exit_rx {
+        Some(ref rx) => !*rx.borrow() && process_is_alive(pid),
+        None => process_is_alive(pid),
+    };
+
+    if !root_still_alive && env.treekill && !descendants.is_empty() {
+        // Give descendants up to the remaining kill_timeout to exit gracefully before SIGKILL
+        while tokio::time::Instant::now() < deadline {
+            if descendants.iter().all(|&d| !process_is_alive(d)) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(retry_ms)).await;
+        }
+    }
+
+    // Step 2: Escalate to SIGKILL on any surviving processes
     let latest_descendants = if env.treekill {
         collect_descendant_pids(pid)
     } else {
         Vec::new()
     };
-    send_signal_to_tree(pid, &latest_descendants, libc::SIGKILL);
+    if root_still_alive {
+        send_signal_to_tree(pid, &latest_descendants, libc::SIGKILL);
+    }
     for &d in &descendants {
         if process_is_alive(d) {
             unsafe {
@@ -941,8 +1272,12 @@ pub async fn kill_process_gracefully(
     }
 
     let mut elapsed2 = 0;
-    while elapsed2 < timeout_ms {
-        if !process_is_alive(pid) {
+    while elapsed2 < timeout_ms.min(1000) {
+        let exited = match exit_rx {
+            Some(ref rx) => *rx.borrow() || !process_is_alive(pid),
+            None => !process_is_alive(pid),
+        };
+        if exited {
             return;
         }
         tokio::time::sleep(Duration::from_millis(retry_ms)).await;
@@ -1029,6 +1364,7 @@ pub async fn restart_process_id(
     god: Arc<Mutex<God>>,
     id: u32,
     extra_env: BTreeMap<String, String>,
+    conf: Option<Value>,
 ) -> Result<ProcessDescription> {
     let was_running = {
         let mut g = god.lock().await;
@@ -1039,10 +1375,17 @@ pub async fn restart_process_id(
         proc.pm2_env.created_at = Some(now_ms());
         proc.pm2_env.unstable_restarts = 0;
         proc.pm2_env.prev_restart_delay = 0;
+        if let Some(ref patch) = conf {
+            proc.pm2_env.apply_conf_patch(patch);
+        }
         for (k, v) in extra_env {
             proc.pm2_env.env.insert(k, v);
         }
-        proc.pm2_env.status == ONLINE_STATUS || proc.pm2_env.status == LAUNCHING_STATUS || proc.pid > 0
+        suffix_paths_for_instance(&mut proc.pm2_env);
+        proc.pm2_env.sync_flattened_env();
+        proc.pm2_env.status == ONLINE_STATUS
+            || proc.pm2_env.status == LAUNCHING_STATUS
+            || proc.pid > 0
     };
 
     if was_running {
@@ -1051,6 +1394,7 @@ pub async fn restart_process_id(
             let mut g = god.lock().await;
             if let Some(proc) = g.clusters_db.get_mut(&id) {
                 proc.pm2_env.restart_time += 1;
+                proc.pm2_env.sync_flattened_env();
             }
         }
     }
@@ -1058,86 +1402,118 @@ pub async fn restart_process_id(
     start_process_id(god, id).await
 }
 
-/// Zero-downtime reload (`pmr reload` / `pmr gracefulReload`).
-/// In `cluster_mode` when online, spawns the new worker first and waits for `ready_notify`
-/// (which fires on `listening` or `process.send('ready')`) or `listen_timeout` before stopping the old worker!
 pub async fn reload_process_id(
     god: Arc<Mutex<God>>,
     id: u32,
     extra_env: BTreeMap<String, String>,
+    conf: Option<Value>,
     soft: bool,
 ) -> Result<ProcessDescription> {
-    let (is_cluster_online, old_pid, mut old_env, old_ipc_tx, listen_timeout) = {
+    let (is_cluster_online, old_pid, mut old_env, old_ipc_tx, old_exit_rx, listen_timeout) = {
         let mut g = god.lock().await;
         let proc = g
             .clusters_db
             .get_mut(&id)
             .ok_or_else(|| anyhow!("Process {} not found", id))?;
 
+        if let Some(ref patch) = conf {
+            proc.pm2_env.apply_conf_patch(patch);
+        }
         for (k, v) in &extra_env {
             proc.pm2_env.env.insert(k.clone(), v.clone());
         }
+        suffix_paths_for_instance(&mut proc.pm2_env);
+        proc.pm2_env.sync_flattened_env();
 
         let is_cluster_online = proc.pm2_env.status == ONLINE_STATUS
             && proc.pm2_env.exec_mode == CLUSTER_MODE_ID
             && proc.pid > 0;
         if !is_cluster_online {
+            if soft && proc.pid > 0 {
+                proc.pm2_env.status = STOPPING_STATUS.to_string();
+                proc.pm2_env.sync_flattened_env();
+            }
             (
                 false,
                 proc.pid,
                 proc.pm2_env.clone(),
                 proc.ipc_tx.clone(),
+                proc.exit_tx.subscribe(),
                 proc.pm2_env.listen_timeout,
             )
         } else {
-            // Detach old PID from current slot so start_process_id launches replacement in slot `id`
             let old_pid = proc.pid;
             let old_env = proc.pm2_env.clone();
             let old_ipc = proc.ipc_tx.take();
+            let old_exit_rx = proc.exit_tx.subscribe();
             let lt = proc.pm2_env.listen_timeout;
             proc.pid = 0;
             proc.pm2_env.restart_time += 1;
             proc.pm2_env.created_at = Some(now_ms());
             proc.pm2_env.unstable_restarts = 0;
             proc.pm2_env.prev_restart_delay = 0;
-            (true, old_pid, old_env, old_ipc, lt)
+            proc.pm2_env.sync_flattened_env();
+            (true, old_pid, old_env, old_ipc, old_exit_rx, lt)
         }
     };
 
     if !is_cluster_online {
-        return restart_process_id(god, id, extra_env).await;
+        if soft {
+            // For soft/gracefulReload in fork mode, send shutdown message / wait before restart
+            let has_running = old_pid > 0;
+            if has_running {
+                old_env.shutdown_with_message = true;
+                old_env.kill_timeout = old_env.kill_timeout.max(GRACEFUL_TIMEOUT_MS);
+                kill_process_gracefully(old_pid, &old_env, old_ipc_tx, Some(old_exit_rx)).await;
+                let mut g = god.lock().await;
+                if let Some(proc) = g.clusters_db.get_mut(&id) {
+                    proc.pid = 0;
+                    proc.pm2_env.status = STOPPED_STATUS.to_string();
+                    proc.pm2_env.restart_time += 1;
+                    proc.pm2_env.sync_flattened_env();
+                }
+                drop(g);
+                return start_process_id(god, id).await;
+            }
+        }
+        return restart_process_id(god, id, extra_env, None).await;
     }
 
-    let ready_notify = {
+    // Launch new worker while old worker is still serving traffic
+    let desc = start_process_id(Arc::clone(&god), id).await?;
+
+    let mut ready_rx = {
         let g = god.lock().await;
         g.clusters_db
             .get(&id)
-            .map(|p| Arc::clone(&p.ready_notify))
-            .unwrap_or_else(|| Arc::new(Notify::new()))
+            .map(|p| p.ready_tx.subscribe())
+            .unwrap_or_else(|| watch::channel(true).1)
     };
 
-    // Launch new worker while old worker is still serving traffic!
-    let desc = start_process_id(Arc::clone(&god), id).await?;
-
     // Wait for new worker to signal `listening` or `ready` (or timeout after `listen_timeout`)
-    let _ = tokio::time::timeout(
-        Duration::from_millis(listen_timeout.max(500)),
-        ready_notify.notified(),
-    )
-    .await;
+    if !*ready_rx.borrow() {
+        let _ = tokio::time::timeout(
+            Duration::from_millis(listen_timeout.max(500)),
+            ready_rx.changed(),
+        )
+        .await;
+    }
 
-    // Now gracefully terminate the old worker
+    // Gracefully terminate the old worker
     if soft {
         old_env.shutdown_with_message = true;
+        old_env.kill_timeout = old_env.kill_timeout.max(GRACEFUL_TIMEOUT_MS);
     }
-    kill_process_gracefully(old_pid, &old_env, old_ipc_tx).await;
+    kill_process_gracefully(old_pid, &old_env, old_ipc_tx, Some(old_exit_rx)).await;
 
-    Ok(desc)
+    let mut g = god.lock().await;
+    Ok(g.get_formatted_process(id).unwrap_or(desc))
 }
 
 pub async fn delete_process_id(god: Arc<Mutex<God>>, id: u32) -> Result<ProcessDescription> {
     let desc = stop_process_id(Arc::clone(&god), id).await?;
     let mut g = god.lock().await;
+    g.unregister_worker(id);
     if let Some(mut removed) = g.clusters_db.remove(&id) {
         removed.watcher = None;
         let _ = fs::remove_file(&removed.pm2_env.pm_pid_path);
@@ -1172,18 +1548,6 @@ pub async fn duplicate_process_id(god: Arc<Mutex<God>>, id: u32) -> Result<Proce
     template_env.unstable_restarts = 0;
     template_env.created_at = Some(now_ms());
     template_env.status = ONLINE_STATUS.to_string();
-    // Strip old instance suffix from log/pid paths
-    let old_log_suffix = format!("-{}.log", id);
-    if let Some(stem) = template_env.pm_out_log_path.strip_suffix(&old_log_suffix) {
-        template_env.pm_out_log_path = format!("{}.log", stem);
-    }
-    if let Some(stem) = template_env.pm_err_log_path.strip_suffix(&old_log_suffix) {
-        template_env.pm_err_log_path = format!("{}.log", stem);
-    }
-    let old_pid_suffix = format!("-{}.pid", id);
-    if let Some(stem) = template_env.pm_pid_path.strip_suffix(&old_pid_suffix) {
-        template_env.pm_pid_path = format!("{}.pid", stem);
-    }
 
     let mut launched = prepare_and_launch(god, template_env, 1).await?;
     launched
@@ -1298,25 +1662,30 @@ pub fn setup_watcher_for_process(god: Arc<Mutex<God>>, g: &mut God, id: u32) {
                     {
                         return true;
                     }
-                    ignore_patterns.iter().any(|pat| s.contains(pat))
+                    ignore_patterns
+                        .iter()
+                        .any(|pat| !pat.is_empty() && s.contains(pat))
                 });
                 if should_ignore {
                     continue;
                 }
 
                 tokio::time::sleep(Duration::from_millis(watch_delay)).await;
-                // Drain queued events during debounce window
                 while rx.try_recv().is_ok() {}
 
                 let still_watching = {
                     let g = god_watch.lock().await;
-                    g.clusters_db
-                        .get(&id)
-                        .map(|p| p.pm2_env.watch)
-                        .unwrap_or(false)
+                    if g.pm2_being_killed {
+                        false
+                    } else if let Some(p) = g.clusters_db.get(&id) {
+                        p.pm2_env.watch
+                    } else {
+                        false
+                    }
                 };
                 if still_watching {
-                    let _ = restart_process_id(Arc::clone(&god_watch), id, BTreeMap::new()).await;
+                    let _ =
+                        restart_process_id(Arc::clone(&god_watch), id, BTreeMap::new(), None).await;
                 } else {
                     break;
                 }
@@ -1325,9 +1694,57 @@ pub fn setup_watcher_for_process(god: Arc<Mutex<God>>, g: &mut God, id: u32) {
     }
 }
 
+fn normalize_cron_dow_field(dow: &str) -> String {
+    let map_num = |token: &str| -> String {
+        match token {
+            "0" | "7" => "SUN".to_string(),
+            "1" => "MON".to_string(),
+            "2" => "TUE".to_string(),
+            "3" => "WED".to_string(),
+            "4" => "THU".to_string(),
+            "5" => "FRI".to_string(),
+            "6" => "SAT".to_string(),
+            other => other.to_string(),
+        }
+    };
+    dow.split(',')
+        .map(|part| {
+            let (range_part, step_part) = match part.split_once('/') {
+                Some((r, s)) => (r, Some(s)),
+                None => (part, None),
+            };
+            let mapped_range = if let Some((a, b)) = range_part.split_once('-') {
+                format!("{}-{}", map_num(a), map_num(b))
+            } else {
+                map_num(range_part)
+            };
+            match step_part {
+                Some(s) => format!("{}/{}", mapped_range, s),
+                None => mapped_range,
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+pub fn normalize_cron_expr(expr: &str) -> String {
+    let parts: Vec<&str> = expr.split_whitespace().collect();
+    if parts.len() == 5 {
+        let dow = normalize_cron_dow_field(parts[4]);
+        format!("0 {} {} {} {} {}", parts[0], parts[1], parts[2], parts[3], dow)
+    } else if parts.len() == 6 {
+        let dow = normalize_cron_dow_field(parts[5]);
+        format!(
+            "{} {} {} {} {} {}",
+            parts[0], parts[1], parts[2], parts[3], parts[4], dow
+        )
+    } else {
+        expr.to_string()
+    }
+}
+
 /// Background Worker & Cron loop (`lib/Worker.js` + `God.registerCron`).
 pub fn spawn_worker_and_cron_loops(god: Arc<Mutex<God>>) {
-    // 1. Worker loop: refreshes memory/CPU, resets exp_backoff_restart_delay after 30s, checks max_memory_restart
     let god_worker = Arc::clone(&god);
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_millis(2_000));
@@ -1353,7 +1770,12 @@ pub fn spawn_worker_and_cron_loops(god: Arc<Mutex<God>>) {
 
                         if let Some(max_mem) = proc.pm2_env.max_memory_restart {
                             if proc.monit.memory > max_mem {
-                                over_mem.push((id, proc.pm2_env.name.clone(), proc.monit.memory, max_mem));
+                                over_mem.push((
+                                    id,
+                                    proc.pm2_env.name.clone(),
+                                    proc.monit.memory,
+                                    max_mem,
+                                ));
                             }
                         }
                     }
@@ -1368,19 +1790,20 @@ pub fn spawn_worker_and_cron_loops(god: Arc<Mutex<God>>) {
             };
 
             for (id, _, _, _) in to_reload {
-                let _ = reload_process_id(Arc::clone(&god_worker), id, BTreeMap::new(), false).await;
+                let _ = reload_process_id(Arc::clone(&god_worker), id, BTreeMap::new(), None, false)
+                    .await;
             }
         }
     });
 
-    // 2. Cron loop: checks cron_restart schedules every second
+    // Cron loop: checks cron_restart schedules every second using local time
     let god_cron = Arc::clone(&god);
     tokio::spawn(async move {
         let mut last_sec = i64::MIN;
         let mut interval = tokio::time::interval(Duration::from_millis(500));
         loop {
             interval.tick().await;
-            let now = Utc::now();
+            let now = Local::now();
             let cur_sec = now.timestamp();
             if cur_sec == last_sec {
                 continue;
@@ -1394,7 +1817,9 @@ pub fn spawn_worker_and_cron_loops(god: Arc<Mutex<God>>) {
                 }
                 let mut due = Vec::new();
                 for (&id, proc) in &g.clusters_db {
-                    if proc.pm2_env.status != ONLINE_STATUS {
+                    if proc.pm2_env.status == STOPPING_STATUS
+                        || proc.pm2_env.status == LAUNCHING_STATUS
+                    {
                         continue;
                     }
                     let Some(ref cron_expr) = proc.pm2_env.cron_restart else {
@@ -1403,12 +1828,7 @@ pub fn spawn_worker_and_cron_loops(god: Arc<Mutex<God>>) {
                     if cron_expr.is_empty() || cron_expr == "0" {
                         continue;
                     }
-                    // Normalize 5-field cron to 6-field cron (prepend "0 " for seconds)
-                    let normalized = if cron_expr.split_whitespace().count() == 5 {
-                        format!("0 {}", cron_expr)
-                    } else {
-                        cron_expr.clone()
-                    };
+                    let normalized = normalize_cron_expr(cron_expr);
                     if let Ok(schedule) = Schedule::from_str(&normalized) {
                         let prev = now - chrono::Duration::seconds(1);
                         if let Some(next_time) = schedule.after(&prev).next() {
@@ -1422,10 +1842,32 @@ pub fn spawn_worker_and_cron_loops(god: Arc<Mutex<God>>) {
             };
 
             for id in ids_to_restart {
-                let _ = restart_process_id(Arc::clone(&god_cron), id, BTreeMap::new()).await;
+                let _ =
+                    restart_process_id(Arc::clone(&god_cron), id, BTreeMap::new(), None).await;
             }
         }
     });
+}
+
+async fn bind_cluster_listener(
+    requested_host: Option<&str>,
+    port: u16,
+) -> std::io::Result<tokio::net::TcpListener> {
+    if let Some(host) = requested_host {
+        let h = host.trim();
+        if !h.is_empty() && h != "0.0.0.0" && h != "::" && h != "[::]" {
+            if let Ok(l) = tokio::net::TcpListener::bind((h, port)).await {
+                return Ok(l);
+            }
+        }
+    }
+    if let Ok(l) = tokio::net::TcpListener::bind(("::", port)).await {
+        return Ok(l);
+    }
+    if let Ok(l) = tokio::net::TcpListener::bind(("0.0.0.0", port)).await {
+        return Ok(l);
+    }
+    tokio::net::TcpListener::bind(("127.0.0.1", port)).await
 }
 
 /// Handle messages arriving from the Node preload IPC socket (`node_ipc.sock`).
@@ -1437,63 +1879,119 @@ pub async fn handle_node_ipc_message(
     let Some(pm_id) = msg.get("pm_id").and_then(|v| v.as_u64()).map(|n| n as u32) else {
         return;
     };
+    let msg_pid = msg.get("pid").and_then(|v| v.as_u64()).map(|n| n as u32).unwrap_or(0);
     let msg_type = msg.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
     let mut g = god.lock().await;
     let Some(proc) = g.clusters_db.get_mut(&pm_id) else {
         return;
     };
+    if proc.pid > 0 && msg_pid > 0 && proc.pid != msg_pid {
+        return;
+    }
     proc.ipc_tx = Some(ipc_tx.clone());
 
     match msg_type {
         "internal:hello" => {
             if let Some(nv) = msg.get("node_version").and_then(|v| v.as_str()) {
                 proc.pm2_env.node_version = Some(nv.to_string());
+                proc.pm2_env.sync_flattened_env();
             }
         }
         "listening" => {
-            let req_port = msg.get("requested_port").and_then(|v| v.as_u64()).map(|n| n as u16);
-            let wrk_port = msg.get("worker_port").and_then(|v| v.as_u64()).map(|n| n as u16);
-            proc.ready_notify.notify_waiters();
-            if proc.pm2_env.status == LAUNCHING_STATUS && !proc.pm2_env.wait_ready {
-                proc.pm2_env.status = ONLINE_STATUS.to_string();
+            let req_port = msg
+                .get("requested_port")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as u16);
+            let wrk_port = msg
+                .get("worker_port")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as u16);
+            let req_host = msg
+                .get("requested_host")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+
+            if !proc.pm2_env.wait_ready {
+                let _ = proc.ready_tx.send(true);
+                if proc.pm2_env.status == LAUNCHING_STATUS {
+                    proc.pm2_env.status = ONLINE_STATUS.to_string();
+                    proc.pm2_env.sync_flattened_env();
+                }
             }
             if let (Some(rp), Some(wp)) = (req_port, wrk_port) {
-                if let Some(wmap) = g.cluster_balancers.get(&rp) {
-                    wmap.lock().unwrap().insert(pm_id, wp);
+                if let Some(balancer) = g.cluster_balancers.get(&rp) {
+                    balancer.workers.lock().unwrap().insert(pm_id, wp);
                     let _ = ipc_tx.send(json!({ "__pmr_cluster_ack": true }).to_string());
                 } else {
                     let wmap = Arc::new(std::sync::Mutex::new(BTreeMap::new()));
                     wmap.lock().unwrap().insert(pm_id, wp);
-                    g.cluster_balancers.insert(rp, Arc::clone(&wmap));
+                    let shutdown = Arc::new(Notify::new());
+                    g.cluster_balancers.insert(
+                        rp,
+                        ClusterBalancer {
+                            workers: Arc::clone(&wmap),
+                            shutdown: Arc::clone(&shutdown),
+                        },
+                    );
                     let ipc_tx_clone = ipc_tx.clone();
+                    let god_bal = Arc::clone(&god);
                     tokio::spawn(async move {
-                        let listener_res = match tokio::net::TcpListener::bind(("127.0.0.1", rp)).await {
-                            Ok(l) => Ok(l),
-                            Err(_) => tokio::net::TcpListener::bind(("0.0.0.0", rp)).await,
-                        };
-                        let _ = ipc_tx_clone.send(json!({ "__pmr_cluster_ack": true }).to_string());
-                        if let Ok(listener) = listener_res {
-                            let mut rr_idx: usize = 0;
-                            while let Ok((mut inbound, _)) = listener.accept().await {
-                                let target_wp = {
-                                    let guard = wmap.lock().unwrap();
-                                    let ports: Vec<u16> = guard.values().copied().collect();
-                                    if ports.is_empty() {
-                                        None
-                                    } else {
-                                        let p = ports[rr_idx % ports.len()];
-                                        rr_idx = rr_idx.wrapping_add(1);
-                                        Some(p)
-                                    }
-                                };
-                                if let Some(twp) = target_wp {
-                                    tokio::spawn(async move {
-                                        if let Ok(mut outbound) = tokio::net::TcpStream::connect(("127.0.0.1", twp)).await {
-                                            let _ = tokio::io::copy_bidirectional(&mut inbound, &mut outbound).await;
+                        match bind_cluster_listener(req_host.as_deref(), rp).await {
+                            Ok(listener) => {
+                                let _ = ipc_tx_clone
+                                    .send(json!({ "__pmr_cluster_ack": true }).to_string());
+                                let mut rr_idx: usize = 0;
+                                loop {
+                                    tokio::select! {
+                                        _ = shutdown.notified() => {
+                                            break;
                                         }
-                                    });
+                                        accept_res = listener.accept() => {
+                                            let Ok((mut inbound, _)) = accept_res else {
+                                                tokio::time::sleep(Duration::from_millis(10)).await;
+                                                continue;
+                                            };
+                                            let ports: Vec<u16> = {
+                                                let guard = wmap.lock().unwrap();
+                                                guard.values().copied().collect()
+                                            };
+                                            if ports.is_empty() {
+                                                continue;
+                                            }
+                                            let start_idx = rr_idx;
+                                            rr_idx = rr_idx.wrapping_add(1);
+                                            tokio::spawn(async move {
+                                                for offset in 0..ports.len() {
+                                                    let twp = ports[(start_idx + offset) % ports.len()];
+                                                    if let Ok(mut outbound) =
+                                                        tokio::net::TcpStream::connect(("127.0.0.1", twp)).await
+                                                    {
+                                                        let _ = tokio::io::copy_bidirectional(
+                                                            &mut inbound,
+                                                            &mut outbound,
+                                                        )
+                                                        .await;
+                                                        break;
+                                                    }
+                                                }
+                                            });
+                                        }
+                                    }
                                 }
+                            }
+                            Err(e) => {
+                                {
+                                    let mut g = god_bal.lock().await;
+                                    g.cluster_balancers.remove(&rp);
+                                }
+                                let _ = ipc_tx_clone.send(
+                                    json!({
+                                        "__pmr_cluster_ack": false,
+                                        "__pmr_cluster_err": e.to_string()
+                                    })
+                                    .to_string(),
+                                );
                             }
                         }
                     });
@@ -1502,10 +2000,17 @@ pub async fn handle_node_ipc_message(
         }
         "process:msg" => {
             let raw = msg.get("raw").cloned().unwrap_or(Value::Null);
-            if raw.as_str() == Some("ready") {
+            let mut marked_online = false;
+            if raw.as_str() == Some("ready")
+                || raw.get("data").and_then(|v| v.as_str()) == Some("ready")
+            {
+                let was_launching = proc.pm2_env.status == LAUNCHING_STATUS;
                 proc.pm2_env.status = ONLINE_STATUS.to_string();
-                proc.ready_notify.notify_waiters();
+                proc.pm2_env.sync_flattened_env();
+                let _ = proc.ready_tx.send(true);
+                marked_online = was_launching;
             }
+            let mut extra_bus_event: Option<(String, Value)> = None;
             if let Some(obj) = raw.as_object() {
                 if let Some(t) = obj.get("type").and_then(|v| v.as_str()) {
                     match t {
@@ -1533,8 +2038,14 @@ pub async fn handle_node_ipc_message(
                         }
                         "axm:action" => {
                             if let Some(data) = obj.get("data").and_then(|d| d.as_object()) {
-                                if let Some(aname) = data.get("action_name").and_then(|a| a.as_str()) {
-                                    if !proc.pm2_env.axm_actions.iter().any(|a| a.action_name == aname) {
+                                if let Some(aname) = data.get("action_name").and_then(|a| a.as_str())
+                                {
+                                    if !proc
+                                        .pm2_env
+                                        .axm_actions
+                                        .iter()
+                                        .any(|a| a.action_name == aname)
+                                    {
                                         proc.pm2_env.axm_actions.push(AxmAction {
                                             action_name: aname.to_string(),
                                             action_type: data
@@ -1547,19 +2058,53 @@ pub async fn handle_node_ipc_message(
                                 }
                             }
                         }
+                        "axm:option:configuration" => {
+                            if let Some(data) = obj.get("data").and_then(|d| d.as_object()) {
+                                if !proc.pm2_env.axm_options.is_object() {
+                                    proc.pm2_env.axm_options = json!({});
+                                }
+                                if let Some(opts_obj) = proc.pm2_env.axm_options.as_object_mut() {
+                                    for (k, v) in data {
+                                        opts_obj.insert(k.clone(), v.clone());
+                                    }
+                                }
+                            }
+                        }
+                        "axm:dynamic" => {
+                            if let Some(data) = obj.get("data") {
+                                proc.pm2_env.axm_dynamic = data.clone();
+                            }
+                        }
+                        "axm:reply" | "process:exception" | "human:event" => {
+                            extra_bus_event = Some((
+                                t.to_string(),
+                                obj.get("data").cloned().unwrap_or(raw.clone()),
+                            ));
+                        }
                         _ => {}
                     }
                 }
             }
             let name = proc.pm2_env.name.clone();
             let ns = proc.pm2_env.namespace.clone();
-            g.emit_bus_event(
-                "process:msg",
-                json!(pm_id),
-                &name,
-                &ns,
-                json!({ "raw": raw }),
-            );
+            if marked_online {
+                g.log_pm2(&format!("App [{}:{}] online", name, pm_id));
+                g.emit_bus_event(
+                    "process:event",
+                    json!(pm_id),
+                    &name,
+                    &ns,
+                    json!({
+                        "event": "online",
+                        "manually": false,
+                        "process": { "pm_id": pm_id, "name": name, "status": ONLINE_STATUS }
+                    }),
+                );
+            }
+            if let Some((ev_name, ev_data)) = extra_bus_event {
+                g.emit_bus_event(&ev_name, json!(pm_id), &name, &ns, ev_data);
+            }
+            g.emit_bus_event("process:msg", json!(pm_id), &name, &ns, json!({ "raw": raw }));
         }
         _ => {}
     }

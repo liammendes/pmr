@@ -8,7 +8,7 @@ use tokio::net::TcpListener;
 
 use crate::client::PmrClient;
 use crate::config::{AppConfig, StartOptions};
-use crate::constants::DEFAULT_WEB_PORT;
+use crate::constants::{DEFAULT_WEB_PORT, PMR_VERSION};
 use crate::paths::PmrPaths;
 use crate::process::ProcessDescription;
 
@@ -27,7 +27,7 @@ pub async fn launch_web_app(
 
     let app = AppConfig {
         script: "__pmr_web__".to_string(),
-        name: Some("pmr-http-interface".to_string()),
+        name: Some("pm2-http-interface".to_string()),
         env,
         ..Default::default()
     };
@@ -70,17 +70,33 @@ pub async fn run_web_server(paths: PmrPaths) -> Result<()> {
             if buf_reader.read_line(&mut request_line).await.is_err() || request_line.is_empty() {
                 return;
             }
-            let parts: Vec<&str> = request_line.split_whitespace().collect();
-            let path = parts.get(1).copied().unwrap_or("/");
+            // Drain headers
+            loop {
+                let mut hline = String::new();
+                if buf_reader.read_line(&mut hline).await.is_err() {
+                    break;
+                }
+                if hline == "\r\n" || hline == "\n" || hline.is_empty() {
+                    break;
+                }
+            }
 
-            if path != "/" {
+            let parts: Vec<&str> = request_line.split_whitespace().collect();
+            let method = parts.first().copied().unwrap_or("GET");
+            let is_head = method.eq_ignore_ascii_case("HEAD");
+            let raw_uri = parts.get(1).copied().unwrap_or("/");
+            let pathname = raw_uri.split('?').next().unwrap_or("/");
+
+            if pathname != "/" {
                 let body = b"{\"err\":\"404\"}";
                 let header = format!(
                     "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
                     body.len()
                 );
                 let _ = writer.write_all(header.as_bytes()).await;
-                let _ = writer.write_all(body).await;
+                if !is_head {
+                    let _ = writer.write_all(body).await;
+                }
                 return;
             }
 
@@ -88,6 +104,7 @@ pub async fn run_web_server(paths: PmrPaths) -> Result<()> {
             if strip_env {
                 for p in &mut procs {
                     p.pm2_env.env.clear();
+                    p.pm2_env.extra.clear();
                 }
             }
 
@@ -101,6 +118,13 @@ pub async fn run_web_server(paths: PmrPaths) -> Result<()> {
                     json!({
                         "model": c.brand(),
                         "speed": c.frequency(),
+                        "times": {
+                            "user": 0,
+                            "nice": 0,
+                            "sys": 0,
+                            "idle": 0,
+                            "irq": 0,
+                        }
                     })
                 })
                 .collect();
@@ -115,17 +139,24 @@ pub async fn run_web_server(paths: PmrPaths) -> Result<()> {
                     "total_mem": sys.total_memory(),
                     "free_mem": sys.available_memory(),
                     "cpu": cpus,
+                    "interfaces": {},
+                },
+                "process": {
+                    "pid": std::process::id(),
+                    "version": PMR_VERSION,
                 },
                 "processes": procs,
             });
 
             let body = serde_json::to_vec(&payload).unwrap_or_default();
             let header = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: Cache-Control, Pragma, Origin, Authorization, Content-Type, X-Requested-With\r\nAccess-Control-Allow-Methods: GET\r\nConnection: close\r\n\r\n",
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: Cache-Control, Pragma, Origin, Authorization, Content-Type, X-Requested-With\r\nAccess-Control-Allow-Methods: GET, HEAD\r\nConnection: close\r\n\r\n",
                 body.len()
             );
             let _ = writer.write_all(header.as_bytes()).await;
-            let _ = writer.write_all(&body).await;
+            if !is_head {
+                let _ = writer.write_all(&body).await;
+            }
         });
     }
 }
