@@ -1,6 +1,6 @@
 # pmr
 
-<img src="docs/assets/pmr-wordmark.png" alt="pmr in sculpted cyan, violet, pink and amber lettering" width="420">
+<img src="docs/assets/pmr-wordmark.svg" alt="pmr in deep blue gradient lettering" width="420">
 
 **Keep your processes running. Keep your terminal useful.**
 

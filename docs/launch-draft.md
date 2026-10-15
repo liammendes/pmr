@@ -38,13 +38,13 @@ Early release. Bug reports and reproducible tests welcome.
 
 ## Image alt text
 
-Sculpted lowercase pmr lettering in cyan, violet, pink and amber, beside a colourful glass terminal icon. The heading reads “Keep your processes running.” A real terminal dashboard shows four local demo services online: api, worker, camera-sim and docs, with process state, logs and resource use. A Rust process manager for developers and coding agents, built by Liam Mendes.
+Rounded lowercase pmr lettering and a terminal icon share a deep blue gradient. The official Liam Mendes logo appears at the top right. The heading reads “Keep your processes running.” A real terminal dashboard shows four local demo services online: api, worker, camera-sim and docs, with process state, logs and resource use. A Rust process manager for developers and coding agents, built by Liam Mendes.
 
 ## Video transcript and description
 
 The video is silent, 24 seconds long, 1920 × 1080 at 60 fps. All meaning is in the on-screen text. A reduced-motion version and static poster are available.
 
-- 0–4 seconds: Sculpted polychrome pmr lettering and a colourful terminal icon. “Keep your processes running. A Rust process manager for developers and coding agents.”
+- 0–4 seconds: Deep blue pmr lettering and terminal icon, with the official Liam Mendes logo at the top right. “Keep your processes running. A Rust process manager for developers and coding agents.”
 - 4–10 seconds: “Every process. One clear view.” Names, logs and resource use, ready for people and agents. A real `pmr monit` dashboard shows four isolated local demo services.
 - 10–17 seconds: “A faster process list.” Median JSON-list latency for 10 processes: pmr 1.0.0, 14.7 ms; PM2 7.0.4, 100.1 ms. PM2/pmr median command-time ratio: 6.8×. Thirty samples each on an M1 Max with 10 CPU cores, 32 GiB RAM, macOS 27.2 and Node 26.4.0. Measured on a working desktop on 15 October 2026. Application speed varies; full method, p95 and samples are in the benchmark report.
 - 17–24 seconds: “Self-healing camera services.” Supervise Raspberry Pi capture and upload workers; recover from process crashes. A real dashboard shows camera-sim online after one restart. The demo uses synthetic frames on macOS; Raspberry Pi hardware is untested. Reboot recovery requires startup setup.
@@ -54,7 +54,7 @@ The video is silent, 24 seconds long, 1920 × 1080 at 60 fps. All meaning is in 
 - [Static poster](assets/pmr-launch.png)
 - [24-second MP4](assets/pmr-launch.mp4)
 - [Reduced-motion MP4](assets/pmr-launch-reduced-motion.mp4)
-- [Polychrome wordmark](assets/pmr-wordmark.png)
+- [Deep blue wordmark](assets/pmr-wordmark.svg)
 - [Terminal icon](assets/pmr-icon.png)
 - [Original dashboard screenshot](assets/pmr-dashboard.jpg)
 - [Camera recovery screenshot](assets/pmr-camera-recovery.jpg)

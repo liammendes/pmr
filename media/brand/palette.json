@@ -1,0 +1,28 @@
+{
+  "name": "Blue",
+  "gradient": {
+    "type": "linear",
+    "start": [
+      0.5,
+      0
+    ],
+    "end": [
+      0.5,
+      1
+    ],
+    "stops": [
+      {
+        "offset": 0,
+        "color": "#0080FF",
+        "displayP3": "color(display-p3 0.0000 0.5000 1.0000)"
+      },
+      {
+        "offset": 1,
+        "color": "#0057FF",
+        "displayP3": "color(display-p3 0.0000 0.3400 1.0000)"
+      }
+    ]
+  },
+  "paper": "#faf9f6",
+  "text": "#000000"
+}

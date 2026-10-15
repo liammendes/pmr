@@ -14,8 +14,8 @@ The two JPEG screenshots were captured through the Computer plugin from the real
 
 ## Identity and typography
 
-The Prism identity pairs original, sculpted polychrome lettering with a glass-and-porcelain terminal icon. Cyan and blue, violet and pink, and coral and amber give each letter its own colour. Manrope provides the headings and supporting text. The art is generated, not a photograph of a physical object.
+The PMR wordmark and icon share Liam's vertical blue gradient: `#0080FF` to `#0057FF`, with Display P3 values retained in the SVG sources. Manrope provides the headings and supporting text in `#000000`. The official Liam Mendes logo sits 64 px from both the top and right. The wordmark, headline and description share a 100 px left edge.
 
-Generation prompts and capture origins are preserved in [asset provenance](asset-provenance.json) and embedded in the PNG metadata. The font files include their licences. See [DESIGN.md](../DESIGN.md) for colours, type sizes, spacing and motion timings.
+The final icon is built in Apple Icon Composer. Open [PMR.icon](brand/PMR.icon) to edit the separate blue face, terminal prompt and status jewel layers. Its exported PNG is used in Paper and Remotion. The wordmark remains an editable SVG. [Palette values](brand/palette.json) and [asset provenance](asset-provenance.json) record the sources. The font files include their licences. See [DESIGN.md](../DESIGN.md) for type sizes, spacing and motion timings.
 
 The static poster and written transcript convey the same information without motion. The reduced-motion video replaces camera tilts, movement and scaling with short opacity transitions. The normal video uses one shared wordmark transition, gentle screenshot entrances and proportionate benchmark bars; displayed measurements never count through invented values.

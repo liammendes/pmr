@@ -3,13 +3,15 @@
   "assets": [
     {
       "file": "pmr-icon.png",
-      "origin": "Original generated brand artwork, built-in imagegen; transparent background.",
-      "prompt": "Use case: logo-brand / stylized-concept. Create ONE original premium macOS-style app icon for pmr, a native Rust process manager for developers and coding agents. The user's taste is vivid multicolour, tactile sculptural surfaces, substantial soft shadows, polished rounded edges and refractive depth, like meticulously crafted desktop creative-app icons. Create an original terminal tile: a softly rounded-square warm porcelain outer chassis with a precision bevel and softly shaded sidewalls, filled with luminous layered translucent enamel/glass in rich cyan, electric blue, violet, fuchsia, coral and a small lemon-yellow highlight. In the centre, a substantial beautifully bevelled white terminal prompt symbol >_ is embedded slightly proud of the coloured surface; extremely legible silhouette, real occlusion and soft contact shadows. The glyph must be sculpted and beautiful, not a flat white print. A small clean emerald circular status jewel in the lower-right edge suggests a running process; no letters within the jewel. Front view with a very slight above-right perspective to reveal material depth, mostly frontal for legibility. Large icon centred in square frame with generous transparent margin, object occupies about 78 percent of frame. True transparent background with alpha, preserve delicate shadow. Studio lighting from upper left, gentle pale rainbow refractions within the icon, crisp anti-aliased edges, sophisticated highlights and warm detailed shadows. No words or small labels, no Apple logo, no camera or lens, no clapperboard, no watermark, no extra objects, no rainbow cloudy background outside the icon. Final production asset, immaculate 3D product rendering, not a concept sheet."
+      "origin": "Exported from Apple Icon Composer, media/brand/PMR.icon, iOS/macOS Default appearance at 1024 x 1024. Three editable vector layers: blue face, terminal prompt, status jewel. The colour layer uses Liam Mendes's supplied vertical gradient, #0080FF to #0057FF with Display P3 stops (0, 0.5, 1) and (0, 0.34, 1). Native lighting and shadows are applied by Icon Composer. No image generation."
     },
     {
-      "file": "pmr-wordmark.png",
-      "origin": "Original generated brand artwork, built-in imagegen; transparent background.",
-      "prompt": "Use case: logo-brand. One original high-end polychrome typographic wordmark, exact lowercase letters 'pmr' and absolutely no other text. Large contiguous geometric rounded lowercase glyphs, sturdy friendly silhouette, open clean counters and an unmistakable p, m and r. Three dimensional sculpted cast acrylic / enamel lettering, front facing, restrained extrusion and generously rounded bevels. Each letter has a coherent luminous colour: p moves from cobalt blue to cyan, m from electric violet to fuchsia, r from coral orange to warm golden yellow. Beautiful broad highlights and internal refraction, glossy but precise, tactile desktop-creative-software identity. All three letters share the same size, baseline, thickness, light source and rounded design language. Show real separation and soft contact shadows between glyphs, no overlaps obscuring the reading. Bold simple shape readable at small scale. No background tile, no circle, no icon, no underline, no dots, no symbols. True transparent alpha background, clean outer edges, no stray pixels or wisps, modest soft shadow directly below letters. Composition: wordmark centered horizontally filling a wide 2:1 frame, generous transparent margin all sides, complete descender of p visible. Premium original 3D typography with the craftsmanship of beautifully made physical lettering. No Apple logos, no camera, no clapperboard, no watermark."
+      "file": "pmr-wordmark.svg",
+      "origin": "Original rounded lowercase vector lettering authored in Paper. Uses Liam Mendes's supplied vertical blue gradient, #0080FF to #0057FF with Display P3 stops (0, 0.5, 1) and (0, 0.34, 1). No image generation."
+    },
+    {
+      "file": "liam-mendes.svg",
+      "origin": "Official Liam Mendes vector logo from https://cloud.liammendes.co.uk/svg/liammendes.svg, retrieved 15 October 2026. Original paths retained; currentColor resolved to #000000."
     },
     {
       "file": "pmr-dashboard.jpg",
@@ -21,10 +23,11 @@
     },
     {
       "file": "pmr-launch.png",
-      "origin": "Original Remotion composition rendered from media/video/src/Launch.tsx, Poster, 1920 x 1080. Combines the original pmr-icon.png, pmr-wordmark.png, real pmr-dashboard.jpg and Manrope typography."
+      "origin": "Original Remotion composition rendered from media/video/src/Launch.tsx, Poster, 1920 x 1080. Combines the Icon Composer export pmr-icon.png, original vector pmr-wordmark.svg, official liam-mendes.svg, real pmr-dashboard.jpg and Manrope typography."
     }
   ],
   "fonts": {
     "manrope": "Manrope variable Latin, @fontsource-variable/manrope 5.3.0; SIL Open Font License in media/video/public/fonts/manrope-LICENSE.txt"
-  }
+  },
+  "designSource": "https://app.paper.design/file/01M50QENTJW2RG54VFZZ76JVNV/p-1-0"
 }
