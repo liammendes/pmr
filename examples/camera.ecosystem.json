@@ -1,0 +1,14 @@
+{
+  "apps": [{
+    "name": "camera-capture",
+    "script": "/opt/camera/capture.py",
+    "interpreter": "python3",
+    "cwd": "/opt/camera",
+    "autorestart": true,
+    "exp_backoff_restart_delay": 1000,
+    "max_restarts": 20,
+    "min_uptime": "10s",
+    "kill_timeout": 5000,
+    "time": true
+  }]
+}

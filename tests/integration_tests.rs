@@ -66,8 +66,16 @@ fn test_lifecycle_start_list_describe_stop_restart_delete() {
     // Check logs --nostream
     let lout = run_pmr(&home, &["logs", "alpha-worker", "--nostream", "--raw"]);
     let log_text = String::from_utf8_lossy(&lout.stdout);
-    assert!(log_text.contains("hello stdout"), "logs output: {}", log_text);
-    assert!(log_text.contains("hello stderr"), "logs output: {}", log_text);
+    assert!(
+        log_text.contains("hello stdout"),
+        "logs output: {}",
+        log_text
+    );
+    assert!(
+        log_text.contains("hello stderr"),
+        "logs output: {}",
+        log_text
+    );
 
     // Check describe
     let dout = run_pmr(&home, &["describe", "alpha-worker"]);
@@ -134,12 +142,7 @@ fn test_ecosystem_env_scale_save_and_resurrect() {
 
     let out = run_pmr(
         &home,
-        &[
-            "start",
-            eco_path.to_str().unwrap(),
-            "--env",
-            "production",
-        ],
+        &["start", eco_path.to_str().unwrap(), "--env", "production"],
     );
     assert!(out.status.success());
 
@@ -371,7 +374,10 @@ fn test_serve_and_web_api() {
 
     // Fetch from static server (SPA route fallback)
     let resp_serve = Command::new("curl")
-        .args(["-s", &format!("http://127.0.0.1:{}/some/spa/route", serve_port)])
+        .args([
+            "-s",
+            &format!("http://127.0.0.1:{}/some/spa/route", serve_port),
+        ])
         .output()
         .unwrap();
     let body_serve = String::from_utf8_lossy(&resp_serve.stdout);
@@ -420,10 +426,7 @@ fn test_restart_patch_update_env_and_only_filter() {
     assert!(out.status.success());
 
     // Stop only app-a via ecosystem --only
-    let sout = run_pmr(
-        &home,
-        &["stop", eco.to_str().unwrap(), "--only", "app-a"],
-    );
+    let sout = run_pmr(&home, &["stop", eco.to_str().unwrap(), "--only", "app-a"]);
     assert!(sout.status.success());
 
     let jout = run_pmr(&home, &["jlist"]);

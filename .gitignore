@@ -1,5 +1,15 @@
 /target
-Cargo.lock
+.bench-tools/
+.bench-pm2-6/
+.bench-pm2-7/
+.bench-load/
+dist/
+vendor/
+.pmr/
+__pycache__/
+.env
+.env.*
+!.env.example
 .DS_Store
 *.cpuprofile
 *.heapprofile

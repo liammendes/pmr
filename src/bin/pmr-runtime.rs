@@ -5,9 +5,7 @@ use std::time::Duration;
 
 use pmr::client::PmrClient;
 use pmr::config::{parse_byte_size_str, shell_words_split, StartOptions};
-use pmr::constants::{
-    DEFAULT_WEB_PORT, ERROR_EXIT, LAUNCHING_STATUS, ONLINE_STATUS, PMR_VERSION,
-};
+use pmr::constants::{DEFAULT_WEB_PORT, ERROR_EXIT, LAUNCHING_STATUS, ONLINE_STATUS, PMR_VERSION};
 use pmr::paths::PmrPaths;
 use pmr::ux::{run_logs, LogOptions};
 use pmr::web::launch_web_app;
@@ -208,7 +206,11 @@ async fn run_runtime(cli: RuntimeCli) -> Result<()> {
             .map(shell_words_split)
             .unwrap_or_default(),
         instances,
-        output: Some(cli.output.clone().unwrap_or_else(|| "/dev/null".to_string())),
+        output: Some(
+            cli.output
+                .clone()
+                .unwrap_or_else(|| "/dev/null".to_string()),
+        ),
         error: Some(cli.error.clone().unwrap_or_else(|| "/dev/null".to_string())),
         env_name: cli.env_name.clone(),
         max_memory_restart,

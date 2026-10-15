@@ -46,23 +46,22 @@ pub fn cmd_deploy(args: &[String]) -> Result<()> {
         "package.json",
     ];
 
-    let (file_path, env_name, sub_args) =
-        if is_config_file(&args[0]).is_some() || Path::new(&args[0]).is_file() {
-            if args.len() < 2 {
-                print_deploy_help();
-                return Err(anyhow!("Missing <environment> argument for deploy"));
-            }
-            (PathBuf::from(&args[0]), args[1].clone(), &args[2..])
-        } else {
-            let found = default_files
-                .iter()
-                .map(PathBuf::from)
-                .find(|p| p.exists())
-                .ok_or_else(|| {
-                    anyhow!("No ecosystem configuration file found in current directory")
-                })?;
-            (found, args[0].clone(), &args[1..])
-        };
+    let (file_path, env_name, sub_args) = if is_config_file(&args[0]).is_some()
+        || Path::new(&args[0]).is_file()
+    {
+        if args.len() < 2 {
+            print_deploy_help();
+            return Err(anyhow!("Missing <environment> argument for deploy"));
+        }
+        (PathBuf::from(&args[0]), args[1].clone(), &args[2..])
+    } else {
+        let found = default_files
+            .iter()
+            .map(PathBuf::from)
+            .find(|p| p.exists())
+            .ok_or_else(|| anyhow!("No ecosystem configuration file found in current directory"))?;
+        (found, args[0].clone(), &args[1..])
+    };
 
     let eco = parse_config_file(&file_path)?;
     let env_conf = eco.deploy.get(&env_name).ok_or_else(|| {

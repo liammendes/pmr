@@ -314,7 +314,7 @@ pub fn render_process_list(
                 .username
                 .cmp(&b.pm2_env.username)
                 .then_with(|| a.pm_id.cmp(&b.pm_id)),
-            "id" | "pm_id" | _ => a.pm_id.cmp(&b.pm_id),
+            _ => a.pm_id.cmp(&b.pm_id),
         };
         if desc {
             ord.reverse()
@@ -538,7 +538,9 @@ pub fn render_describe(proc: &ProcessDescription, use_color: bool) -> String {
         ("exec mode".to_string(), env.exec_mode.clone()),
         (
             "node.js version".to_string(),
-            env.node_version.clone().unwrap_or_else(|| "N/A".to_string()),
+            env.node_version
+                .clone()
+                .unwrap_or_else(|| "N/A".to_string()),
         ),
         (
             "node env".to_string(),
@@ -569,7 +571,11 @@ pub fn render_describe(proc: &ProcessDescription, use_color: bool) -> String {
     out.push_str(&render_kv_table(&rows, use_color));
     out.push('\n');
 
-    if let Some(mod_conf) = env.axm_options.get("module_conf").and_then(|v| v.as_object()) {
+    if let Some(mod_conf) = env
+        .axm_options
+        .get("module_conf")
+        .and_then(|v| v.as_object())
+    {
         if !mod_conf.is_empty() {
             let mc_header = "Process configuration";
             if use_color {
@@ -580,7 +586,10 @@ pub fn render_describe(proc: &ProcessDescription, use_color: bool) -> String {
             let mc_rows: Vec<(String, String)> = mod_conf
                 .iter()
                 .map(|(k, v)| {
-                    let s = v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string());
+                    let s = v
+                        .as_str()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| v.to_string());
                     (k.clone(), s)
                 })
                 .collect();
@@ -794,14 +803,7 @@ pub async fn run_logs(client: &PmrClient, opts: LogOptions) -> Result<()> {
                 let p = &proc.pm2_env.pm_out_log_path;
                 if p != "/dev/null" && !seen.contains(p) {
                     seen.push(p.clone());
-                    tail_file(
-                        Path::new(p),
-                        &label,
-                        &proc.name,
-                        &id_str,
-                        opts.lines,
-                        &opts,
-                    );
+                    tail_file(Path::new(p), &label, &proc.name, &id_str, opts.lines, &opts);
                 }
             }
             if !opts.out_only {
@@ -871,11 +873,7 @@ pub async fn run_logs(client: &PmrClient, opts: LogOptions) -> Result<()> {
             }
         }
 
-        let data_str = ev
-            .data
-            .get("data")
-            .and_then(|d| d.as_str())
-            .unwrap_or("");
+        let data_str = ev.data.get("data").and_then(|d| d.as_str()).unwrap_or("");
 
         for line in data_str.lines() {
             let line_hl = highlight_str(line, opts.highlight.as_deref(), opts.use_color);
@@ -891,7 +889,11 @@ pub async fn run_logs(client: &PmrClient, opts: LogOptions) -> Result<()> {
                 println!("{}", obj);
             } else if opts.format {
                 let ts = Local::now().format("%Y-%m-%d-%H:%M:%S%z");
-                let ltype = if ev.event == "log:err" { "error" } else { "out" };
+                let ltype = if ev.event == "log:err" {
+                    "error"
+                } else {
+                    "out"
+                };
                 println!(
                     "timestamp={} app={} id={} type={} message={}",
                     ts, ev.process.name, pm_id_str, ltype, line_hl
@@ -937,9 +939,7 @@ fn matches_log_target(
     if let Some(re) = compiled_regex {
         return re.is_match(&proc.name);
     }
-    proc.name == target
-        || proc.pm_id.to_string() == target
-        || proc.pm2_env.namespace == target
+    proc.name == target || proc.pm_id.to_string() == target || proc.pm2_env.namespace == target
 }
 
 fn tail_file(
@@ -1180,7 +1180,10 @@ pub fn render_tree(val: &serde_json::Value, prefix: &str, is_root: bool) -> Stri
                         out.push_str(&render_tree(v, &next_prefix, false));
                     }
                     _ => {
-                        let s = v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string());
+                        let s = v
+                            .as_str()
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| v.to_string());
                         out.push_str(&format!("{}{}{}: {}\n", prefix, branch, k, s));
                     }
                 }
@@ -1202,14 +1205,20 @@ pub fn render_tree(val: &serde_json::Value, prefix: &str, is_root: bool) -> Stri
                         out.push_str(&render_tree(item, &next_prefix, false));
                     }
                     _ => {
-                        let s = item.as_str().map(|s| s.to_string()).unwrap_or_else(|| item.to_string());
+                        let s = item
+                            .as_str()
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| item.to_string());
                         out.push_str(&format!("{}{}{}\n", prefix, branch, s));
                     }
                 }
             }
         }
         _ => {
-            let s = val.as_str().map(|s| s.to_string()).unwrap_or_else(|| val.to_string());
+            let s = val
+                .as_str()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| val.to_string());
             out.push_str(&format!("{}{}\n", prefix, s));
         }
     }

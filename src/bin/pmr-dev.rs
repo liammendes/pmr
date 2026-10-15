@@ -162,10 +162,7 @@ async fn run_dev(cli: DevCli) -> Result<()> {
                         .and_then(|v| v.as_str())
                         .or(ev.status.as_deref());
                     if ev_type == Some("restart") {
-                        println!(
-                            ">> Process {} restarted",
-                            ev.process.name
-                        );
+                        println!(">> Process {} restarted", ev.process.name);
                     }
                     if ev_type == Some("online") {
                         if let Some(ref cmd_str) = post_cmd {
@@ -241,8 +238,7 @@ async fn run_dev(cli: DevCli) -> Result<()> {
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 if let Ok(list) = client_ae.list().await {
                     let active = list.iter().any(|p| {
-                        p.pm2_env.status == ONLINE_STATUS
-                            || p.pm2_env.status == LAUNCHING_STATUS
+                        p.pm2_env.status == ONLINE_STATUS || p.pm2_env.status == LAUNCHING_STATUS
                     });
                     if !active {
                         fail_count += 1;

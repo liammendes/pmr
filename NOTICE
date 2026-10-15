@@ -1,0 +1,23 @@
+PMR
+Copyright (c) 2026 Liam Mendes and PMR contributors.
+https://github.com/liammendes/pmr
+
+PMR is a Rust port of the PM2 process-manager workflow. Its command vocabulary,
+configuration model, defaults and compatibility templates draw on PM2.
+
+PM2: https://github.com/Unitech/pm2
+Copyright holders include Alexandre Strzelewicz and the PM2 contributors.
+Upstream licence: GNU Affero General Public License version 3.
+Upstream licence text: https://github.com/Unitech/pm2/blob/master/GNU-AGPL-3.0.txt
+
+Changes in PMR include a Rust supervisor and client, Unix socket communication,
+Rust terminal monitoring, packaging, examples, tests and benchmark tooling.
+PMR is independently maintained; PM2 and Keymetrics do not endorse this project.
+
+PMR is distributed under GNU AGPL version 3 only; see LICENSE. Earlier local
+Cargo metadata listed MIT OR Apache-2.0 without accompanying licence files.
+This release corrects that metadata and includes the AGPL text and attribution.
+
+Rust dependencies retain their respective licences. Binary release archives
+include THIRD-PARTY-LICENSES, generated from the locked Cargo dependency graph.
+The corresponding source archive includes the locked dependency sources.

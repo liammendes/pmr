@@ -210,7 +210,12 @@ struct Cli {
     service_name: Option<String>,
 
     /// Restart a running process based on a cron pattern
-    #[arg(short = 'c', long = "cron", visible_alias = "cron-restart", global = true)]
+    #[arg(
+        short = 'c',
+        long = "cron",
+        visible_alias = "cron-restart",
+        global = true
+    )]
     cron: Option<String>,
 
     /// Write configuration in local folder
@@ -799,16 +804,15 @@ fn build_start_options(cli: &Cli, extra_script_args: &[String]) -> Result<StartO
     };
 
     let min_uptime = match cli.min_uptime.as_deref() {
-        Some(s) => {
-            Some(parse_duration_ms_str(s).ok_or_else(|| anyhow!("Invalid min-uptime value: {}", s))?)
-        }
+        Some(s) => Some(
+            parse_duration_ms_str(s).ok_or_else(|| anyhow!("Invalid min-uptime value: {}", s))?,
+        ),
         None => None,
     };
 
     let watch_delay = match cli.watch_delay.as_deref() {
         Some(s) => Some(
-            parse_watch_delay_str(s)
-                .ok_or_else(|| anyhow!("Invalid watch-delay value: {}", s))?,
+            parse_watch_delay_str(s).ok_or_else(|| anyhow!("Invalid watch-delay value: {}", s))?,
         ),
         None => None,
     };
@@ -1593,7 +1597,9 @@ async fn execute_command(
             } else {
                 None
             };
-            let opts_val = params.as_ref().map(|p| serde_json::Value::String(p.clone()));
+            let opts_val = params
+                .as_ref()
+                .map(|p| serde_json::Value::String(p.clone()));
             let resp = client
                 .request(&RpcRequest::MsgProcess {
                     id,
@@ -1627,7 +1633,7 @@ async fn execute_command(
                     if ev.event == "axm:reply"
                         && (target == "all"
                             || ev.process.name == *target
-                            || ev.process.pm_id.to_string() == *target
+                            || target.parse::<u64>().is_ok_and(|id| ev.process.pm_id == id)
                             || ev.process.namespace == *target)
                     {
                         let ret_val = ev.data.get("return").cloned().unwrap_or(ev.data.clone());
@@ -1694,7 +1700,8 @@ async fn execute_command(
             let _ = tokio::time::timeout(Duration::from_secs(3), async {
                 while let Some(ev) = rx.recv().await {
                     if ev.event == "axm:reply"
-                        && (ev.process.name == *name || ev.process.pm_id.to_string() == *name)
+                        && (ev.process.name == *name
+                            || name.parse::<u64>().is_ok_and(|id| ev.process.pm_id == id))
                     {
                         reply_return = ev.data.get("return").cloned();
                         break;
@@ -1800,7 +1807,10 @@ async fn execute_command(
         }
         Commands::Monitor { name } => {
             let Some(ref target_name) = name else {
-                println!("{}PM2 Plus monitoring requires linking first (`pmr link <secret> <public>`)", PREFIX_MSG);
+                println!(
+                    "{}PM2 Plus monitoring requires linking first (`pmr link <secret> <public>`)",
+                    PREFIX_MSG
+                );
                 return Ok(());
             };
             let ids = client.resolve_target_ids(target_name).await?;
@@ -1937,25 +1947,24 @@ async fn execute_command(
             public,
             name,
             ..
-        } => {
-            match (secret, public) {
-                (Some(s), Some(p)) => {
-                    let machine = name.clone().unwrap_or_else(|| {
-                        env::var("HOSTNAME").unwrap_or_else(|_| "localhost".to_string())
-                    });
-                    println!(
-                        "{}[PM2 I/O] Linking machine {} with public key {}...",
-                        PREFIX_MSG,
-                        machine,
-                        p
-                    );
-                    let _ = s;
-                }
-                _ => {
-                    println!("{}[PM2 I/O] Usage: pmr link <secret_key> <public_key> [machine_name]", PREFIX_MSG);
-                }
+        } => match (secret, public) {
+            (Some(s), Some(p)) => {
+                let machine = name.clone().unwrap_or_else(|| {
+                    env::var("HOSTNAME").unwrap_or_else(|_| "localhost".to_string())
+                });
+                println!(
+                    "{}[PM2 I/O] Linking machine {} with public key {}...",
+                    PREFIX_MSG, machine, p
+                );
+                let _ = s;
             }
-        }
+            _ => {
+                println!(
+                    "{}[PM2 I/O] Usage: pmr link <secret_key> <public_key> [machine_name]",
+                    PREFIX_MSG
+                );
+            }
+        },
         Commands::Unlink => {
             println!("{}[PM2 I/O] Unlinked", PREFIX_MSG);
         }
@@ -1973,8 +1982,7 @@ async fn execute_command(
             println!("{}Auto-install complete", PREFIX_MSG);
         }
         Commands::Pull { name, commit_id } => {
-            let procs =
-                cmd_git_version_action(client, "pull", name, commit_id.as_deref()).await?;
+            let procs = cmd_git_version_action(client, "pull", name, commit_id.as_deref()).await?;
             show_list(&procs);
         }
         Commands::Forward { name } => {

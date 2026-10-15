@@ -455,7 +455,10 @@ impl Pm2Env {
         if let Some(n) = obj.get("restart_delay").and_then(|v| v.as_u64()) {
             self.restart_delay = n;
         }
-        if let Some(n) = obj.get("exp_backoff_restart_delay").and_then(|v| v.as_u64()) {
+        if let Some(n) = obj
+            .get("exp_backoff_restart_delay")
+            .and_then(|v| v.as_u64())
+        {
             self.exp_backoff_restart_delay = n;
         }
         if let Some(arr) = obj.get("stop_exit_codes").and_then(|v| v.as_array()) {

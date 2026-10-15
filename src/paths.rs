@@ -111,7 +111,11 @@ impl PmrPaths {
             dump_backup_file_path: resolve_env_or("PM2_DUMP_BACKUP_FILE_PATH", "dump.pm2.bak"),
             daemon_rpc_port: Self::resolve_sock_path(&pm2_home, "PM2_DAEMON_RPC_PORT", "rpc.sock"),
             daemon_pub_port: Self::resolve_sock_path(&pm2_home, "PM2_DAEMON_PUB_PORT", "pub.sock"),
-            interactor_rpc_port: Self::resolve_sock_path(&pm2_home, "PM2_INTERACTOR_RPC_PORT", "interactor.sock"),
+            interactor_rpc_port: Self::resolve_sock_path(
+                &pm2_home,
+                "PM2_INTERACTOR_RPC_PORT",
+                "interactor.sock",
+            ),
             interactor_log_file_path: resolve_env_or("PM2_INTERACTOR_LOG_FILE_PATH", "agent.log"),
             interactor_pid_path: resolve_env_or("PM2_INTERACTOR_PID_PATH", "agent.pid"),
             interaction_conf: resolve_env_or("PM2_INTERACTION_CONF", "agent.json5"),
@@ -130,10 +134,7 @@ impl PmrPaths {
         let candidate = pm2_home.join(default_name);
         // macOS SUN_LEN limit is 104 bytes; keep socket paths <= 96 bytes
         if candidate.to_string_lossy().len() > 96 {
-            let norm = pm2_home
-                .to_string_lossy()
-                .trim_end_matches('/')
-                .to_string();
+            let norm = pm2_home.to_string_lossy().trim_end_matches('/').to_string();
             let mut hash: u64 = 0xcbf29ce484222325;
             for b in norm.as_bytes() {
                 hash ^= *b as u64;
@@ -179,10 +180,9 @@ impl PmrPaths {
             Err(_) => true,
         };
         if needs_write {
-            let tmp = self.pm2_home.join(format!(
-                ".pmr-preload.{}.tmp",
-                std::process::id()
-            ));
+            let tmp = self
+                .pm2_home
+                .join(format!(".pmr-preload.{}.tmp", std::process::id()));
             if fs::write(&tmp, NODE_PRELOAD_SHIM_JS).is_ok() {
                 let _ = fs::rename(&tmp, &self.node_preload_shim_path);
             } else {

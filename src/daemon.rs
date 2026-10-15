@@ -26,6 +26,7 @@ pub async fn run_daemon(paths: PmrPaths) -> Result<()> {
     let lock_path = paths.pm2_home.join("daemon.lock");
     let lock_file = OpenOptions::new()
         .create(true)
+        .truncate(false)
         .read(true)
         .write(true)
         .open(&lock_path)?;
@@ -144,7 +145,7 @@ pub async fn run_daemon(paths: PmrPaths) -> Result<()> {
                     _ = sigusr2.recv() => {
                         let g = god_sig.lock().await;
                         for proc in g.clusters_db.values() {
-                            let _ = proc.log_reload_tx.send_modify(|v| *v = v.wrapping_add(1));
+                            proc.log_reload_tx.send_modify(|v| *v = v.wrapping_add(1));
                         }
                     }
                     _ = sigterm.recv() => break,
@@ -212,7 +213,10 @@ async fn handle_rpc_connection(
         let req_res: Result<RpcRequest, _> = serde_json::from_str(&line);
         let (resp, should_shutdown) = match req_res {
             Ok(req) => dispatch_rpc(Arc::clone(&god), req).await,
-            Err(e) => (RpcResponse::err(format!("Invalid RPC request: {}", e)), false),
+            Err(e) => (
+                RpcResponse::err(format!("Invalid RPC request: {}", e)),
+                false,
+            ),
         };
         let serialized = serde_json::to_string(&resp)? + "\n";
         let _ = writer.write_all(serialized.as_bytes()).await;
@@ -382,7 +386,10 @@ async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bo
                     (RpcResponse::err("Process stdin is not open"), false)
                 }
             } else {
-                (RpcResponse::err(format!("Process {} not found", pm_id)), false)
+                (
+                    RpcResponse::err(format!("Process {} not found", pm_id)),
+                    false,
+                )
             }
         }
         RpcRequest::SendDataToProcessId { id, packet } => {
@@ -438,7 +445,10 @@ async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bo
         }
         RpcRequest::SendSignalToProcessId { process_id, signal } => {
             let Some(sig) = crate::god::parse_unix_signal(&signal) else {
-                return (RpcResponse::err(format!("Unknown signal: {}", signal)), false);
+                return (
+                    RpcResponse::err(format!("Unknown signal: {}", signal)),
+                    false,
+                );
             };
             let mut g = god.lock().await;
             if let Some(proc) = g.clusters_db.get(&process_id) {
@@ -461,7 +471,10 @@ async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bo
             signal,
         } => {
             let Some(sig) = crate::god::parse_unix_signal(&signal) else {
-                return (RpcResponse::err(format!("Unknown signal: {}", signal)), false);
+                return (
+                    RpcResponse::err(format!("Unknown signal: {}", signal)),
+                    false,
+                );
             };
             let mut g = god.lock().await;
             for proc in g.clusters_db.values() {
@@ -545,13 +558,16 @@ async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bo
                     false,
                 )
             } else {
-                (RpcResponse::err(format!("Process {} not found", pm_id)), false)
+                (
+                    RpcResponse::err(format!("Process {} not found", pm_id)),
+                    false,
+                )
             }
         }
         RpcRequest::ReloadLogs => {
             let g = god.lock().await;
             for proc in g.clusters_db.values() {
-                let _ = proc.log_reload_tx.send_modify(|v| *v = v.wrapping_add(1));
+                proc.log_reload_tx.send_modify(|v| *v = v.wrapping_add(1));
                 if let Some(ref tx) = proc.ipc_tx {
                     let _ = tx.send(json!({ "type": "log:reload" }).to_string());
                 }

@@ -67,11 +67,7 @@ pub async fn run_dashboard(client: &PmrClient) -> Result<()> {
     let res = run_dashboard_loop(&mut terminal, client, &stop_flag).await;
 
     let _ = disable_raw_mode();
-    let _ = execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        cursor::Show
-    );
+    let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show);
     let _ = terminal.show_cursor();
 
     res
@@ -467,7 +463,9 @@ async fn run_dashboard_loop(
                     }
                     KeyCode::Char('s') => {
                         if let Some(ref sp) = selected_proc {
-                            let _ = client.stop(&sp.pm_id.to_string(), &Default::default()).await;
+                            let _ = client
+                                .stop(&sp.pm_id.to_string(), &Default::default())
+                                .await;
                         }
                     }
                     _ => {}
@@ -489,9 +487,7 @@ pub async fn run_imonit(client: &PmrClient, use_color: bool) -> Result<()> {
         let procs = client.list().await?;
         print!("\x1b[2J\x1b[H");
         if use_color {
-            println!(
-                "\x1b[32m⌬ PMR \x1b[39mmonitoring\x1b[96m (Press Ctrl-C to exit)\x1b[39m\n"
-            );
+            println!("\x1b[32m⌬ PMR \x1b[39mmonitoring\x1b[96m (Press Ctrl-C to exit)\x1b[39m\n");
         } else {
             println!("PMR monitoring (Press Ctrl-C to exit)\n");
         }

@@ -1,0 +1,11 @@
+{
+  "apps": [{
+    "name": "example-api",
+    "script": "./examples/server.cjs",
+    "interpreter": "node",
+    "env": { "PORT": "3000" },
+    "restart_delay": 1000,
+    "max_restarts": 10,
+    "min_uptime": "5s"
+  }]
+}

@@ -18,7 +18,9 @@ use crate::constants::{
 use crate::paths::PmrPaths;
 use crate::process::{Pm2Env, VersioningInfo};
 
-fn deserialize_string_map<'de, D>(deserializer: D) -> std::result::Result<BTreeMap<String, String>, D::Error>
+fn deserialize_string_map<'de, D>(
+    deserializer: D,
+) -> std::result::Result<BTreeMap<String, String>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -144,18 +146,22 @@ pub fn parse_byte_size_str(s: &str) -> Option<u64> {
         return None;
     }
     let upper = s.to_ascii_uppercase();
-    let (num_part, mult) = if let Some(n) = upper.strip_suffix("GB").or_else(|| upper.strip_suffix('G')) {
-        (n.trim(), 1024 * 1024 * 1024u64)
-    } else if let Some(n) = upper.strip_suffix("MB").or_else(|| upper.strip_suffix('M')) {
-        (n.trim(), 1024 * 1024u64)
-    } else if let Some(n) = upper.strip_suffix("KB").or_else(|| upper.strip_suffix('K')) {
-        (n.trim(), 1024u64)
-    } else if let Some(n) = upper.strip_suffix('B') {
-        (n.trim(), 1u64)
-    } else {
-        (upper.as_str(), 1u64)
-    };
-    num_part.parse::<f64>().ok().map(|v| (v * mult as f64) as u64)
+    let (num_part, mult) =
+        if let Some(n) = upper.strip_suffix("GB").or_else(|| upper.strip_suffix('G')) {
+            (n.trim(), 1024 * 1024 * 1024u64)
+        } else if let Some(n) = upper.strip_suffix("MB").or_else(|| upper.strip_suffix('M')) {
+            (n.trim(), 1024 * 1024u64)
+        } else if let Some(n) = upper.strip_suffix("KB").or_else(|| upper.strip_suffix('K')) {
+            (n.trim(), 1024u64)
+        } else if let Some(n) = upper.strip_suffix('B') {
+            (n.trim(), 1u64)
+        } else {
+            (upper.as_str(), 1u64)
+        };
+    num_part
+        .parse::<f64>()
+        .ok()
+        .map(|v| (v * mult as f64) as u64)
 }
 
 /// Parse human duration strings like `"5s"`, `"2m"`, `"1h"`, `"4000ms"`, `"1000"`.
@@ -253,7 +259,9 @@ fn value_to_string_map(val: &Value) -> BTreeMap<String, String> {
 
 fn value_as_u64(val: &Value) -> Option<u64> {
     match val {
-        Value::Number(n) => n.as_u64().or_else(|| n.as_i64().and_then(|i| u64::try_from(i).ok())),
+        Value::Number(n) => n
+            .as_u64()
+            .or_else(|| n.as_i64().and_then(|i| u64::try_from(i).ok())),
         Value::String(s) => s.trim().parse::<u64>().ok(),
         _ => None,
     }
@@ -440,7 +448,9 @@ impl AppConfig {
         }
 
         if cfg.script.is_empty() {
-            return Err(anyhow!("Application configuration missing required 'script' field"));
+            return Err(anyhow!(
+                "Application configuration missing required 'script' field"
+            ));
         }
 
         Ok(cfg)
@@ -619,10 +629,7 @@ pub fn ecosystem_from_value(val: &Value) -> Result<EcosystemConfig> {
                         .and_then(|v| v.as_str())
                         .unwrap_or(".")
                         .to_string();
-                    let serve_port = sobj
-                        .get("port")
-                        .and_then(value_as_u64)
-                        .unwrap_or(8080);
+                    let serve_port = sobj.get("port").and_then(value_as_u64).unwrap_or(8080);
                     let serve_host = sobj
                         .get("host")
                         .and_then(|v| v.as_str())
@@ -667,10 +674,7 @@ pub fn ecosystem_from_value(val: &Value) -> Result<EcosystemConfig> {
             }
         }
 
-        let apps_val = obj
-            .get("apps")
-            .or_else(|| obj.get("pm2"))
-            .unwrap_or(val);
+        let apps_val = obj.get("apps").or_else(|| obj.get("pm2")).unwrap_or(val);
 
         if let Some(arr) = apps_val.as_array() {
             let multi = arr.len() + eco.apps.len() > 1;
@@ -1086,7 +1090,10 @@ pub fn resolve_app_to_pm2_env(
                     }
                 },
             };
-            if interp == "python" && which_in_path("python").is_none() && which_in_path("python3").is_some() {
+            if interp == "python"
+                && which_in_path("python").is_none()
+                && which_in_path("python3").is_some()
+            {
                 interp = "python3".to_string();
             }
             (resolved_path.to_string_lossy().to_string(), interp)
@@ -1191,7 +1198,11 @@ pub fn resolve_app_to_pm2_env(
                     continue;
                 }
             }
-            if app.filter_env.iter().any(|f| !f.is_empty() && k.contains(f)) {
+            if app
+                .filter_env
+                .iter()
+                .any(|f| !f.is_empty() && k.contains(f))
+            {
                 continue;
             }
             merged_env.insert(k, v);
@@ -1599,10 +1610,9 @@ impl ModuleConfiguration {
 
     fn write_atomic(paths: &PmrPaths, val: &Value) -> Result<()> {
         let serialized = serde_json::to_string_pretty(val)?;
-        let tmp = paths.pm2_module_conf_file.with_extension(format!(
-            "json.tmp.{}",
-            std::process::id()
-        ));
+        let tmp = paths
+            .pm2_module_conf_file
+            .with_extension(format!("json.tmp.{}", std::process::id()));
         fs::write(&tmp, serialized)?;
         fs::rename(&tmp, &paths.pm2_module_conf_file)?;
         Ok(())

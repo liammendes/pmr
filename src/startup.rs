@@ -113,10 +113,7 @@ fn parse_dump_str(raw: &str) -> Result<Vec<Pm2Env>> {
         match Pm2Env::from_pm2_value(item.clone()) {
             Ok(env) => out.push(env),
             Err(e) => {
-                eprintln!(
-                    "{}Skipping malformed dump entry: {}",
-                    PREFIX_MSG_WARNING, e
-                );
+                eprintln!("{}Skipping malformed dump entry: {}", PREFIX_MSG_WARNING, e);
             }
         }
     }
@@ -196,7 +193,10 @@ pub async fn cmd_resurrect(client: &PmrClient) -> Result<Vec<ProcessDescription>
         Err(_) => {
             if let Ok(s) = fs::read_to_string(&client.paths.dump_backup_file_path) {
                 if let Ok(v) = parse_dump_str(&s) {
-                    let _ = fs::copy(&client.paths.dump_backup_file_path, &client.paths.dump_file_path);
+                    let _ = fs::copy(
+                        &client.paths.dump_backup_file_path,
+                        &client.paths.dump_file_path,
+                    );
                     v
                 } else {
                     let corrupt_path = client.paths.dump_file_path.with_extension("pm2.corrupt");
@@ -219,11 +219,14 @@ pub async fn cmd_resurrect(client: &PmrClient) -> Result<Vec<ProcessDescription>
 
     let current = client.list().await?;
     for mut env in dumped {
-        let already_running = current.iter().any(|p| {
-            p.name == env.name && p.pm2_env.node_app_instance == env.node_app_instance
-        });
+        let already_running = current
+            .iter()
+            .any(|p| p.name == env.name && p.pm2_env.node_app_instance == env.node_app_instance);
         if already_running {
-            println!("{}Process {} already running, skipping", PREFIX_MSG, env.name);
+            println!(
+                "{}Process {} already running, skipping",
+                PREFIX_MSG, env.name
+            );
             continue;
         }
         println!("{}Restoring processes {}...", PREFIX_MSG, env.name);
@@ -361,15 +364,13 @@ pub fn cmd_startup(
         _ => UPSTART_TPL,
     };
 
-    let svc_name = service_name
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| {
-            if detected == "launchd" {
-                format!("io.keymetrics.pmr.{}", target_user)
-            } else {
-                format!("pmr-{}", target_user)
-            }
-        });
+    let svc_name = service_name.map(|s| s.to_string()).unwrap_or_else(|| {
+        if detected == "launchd" {
+            format!("io.keymetrics.pmr.{}", target_user)
+        } else {
+            format!("pmr-{}", target_user)
+        }
+    });
 
     let rendered = tpl
         .replace("%PM2_PATH%", &exe_path.to_string_lossy())
@@ -483,15 +484,13 @@ pub fn cmd_unstartup(
         return Err(anyhow!("You have to run this with elevated rights"));
     }
 
-    let svc_name = service_name
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| {
-            if detected == "launchd" {
-                format!("io.keymetrics.pmr.{}", target_user)
-            } else {
-                format!("pmr-{}", target_user)
-            }
-        });
+    let svc_name = service_name.map(|s| s.to_string()).unwrap_or_else(|| {
+        if detected == "launchd" {
+            format!("io.keymetrics.pmr.{}", target_user)
+        } else {
+            format!("pmr-{}", target_user)
+        }
+    });
 
     let dest = match detected {
         "launchd" => home_dir

@@ -1,0 +1,22 @@
+name: Bug report
+description: Help reproduce a problem with pmr.
+body:
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: pmr version, OS, architecture and application runtime.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Minimal commands/configuration, expected behaviour and actual result. Remove secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Redact credentials, environment secrets and personal information.

@@ -1,4 +1,4 @@
-/// Core constants, defaults, interpreter mappings, and templates for PMR (PM2 in Rust).
+//! Core constants, defaults, interpreter mappings, and templates for PMR (PM2 in Rust).
 
 pub const PMR_VERSION: &str = env!("CARGO_PKG_VERSION");
 

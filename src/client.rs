@@ -111,7 +111,8 @@ impl PmrClient {
                 }
             }
 
-            cmd.spawn().context("Failed to spawn PMR background daemon")?;
+            cmd.spawn()
+                .context("Failed to spawn PMR background daemon")?;
 
             for _ in 0..100 {
                 if self.ping_daemon().await {
@@ -140,7 +141,8 @@ impl PmrClient {
     }
 
     pub async fn request(&self, req: &RpcRequest) -> Result<RpcResponse> {
-        self.request_with_timeout(req, Duration::from_secs(60)).await
+        self.request_with_timeout(req, Duration::from_secs(60))
+            .await
     }
 
     pub async fn request_with_timeout(
@@ -319,7 +321,10 @@ impl PmrClient {
         if opts.update_env {
             for (k, v) in env::vars() {
                 if !opts.filter_env.is_empty()
-                    && opts.filter_env.iter().any(|pat| !pat.is_empty() && k.contains(pat))
+                    && opts
+                        .filter_env
+                        .iter()
+                        .any(|pat| !pat.is_empty() && k.contains(pat))
                 {
                     continue;
                 }

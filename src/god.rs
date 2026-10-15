@@ -95,7 +95,14 @@ impl God {
         }
     }
 
-    pub fn emit_bus_event(&self, event: &str, pm_id: Value, name: &str, namespace: &str, data: Value) {
+    pub fn emit_bus_event(
+        &self,
+        event: &str,
+        pm_id: Value,
+        name: &str,
+        namespace: &str,
+        data: Value,
+    ) {
         let status = data
             .get("event")
             .and_then(|v| v.as_str())
@@ -490,7 +497,10 @@ pub fn start_process_id(
         cmd.env("instance_var", &env.instance_var);
         cmd.env("restart_time", env.restart_time.to_string());
         cmd.env("unstable_restarts", env.unstable_restarts.to_string());
-        cmd.env("created_at", env.created_at.unwrap_or(env.pm_uptime).to_string());
+        cmd.env(
+            "created_at",
+            env.created_at.unwrap_or(env.pm_uptime).to_string(),
+        );
         if let Some(inst) = env.node_app_instance {
             let iv = if env.instance_var.is_empty() {
                 "NODE_APP_INSTANCE"
@@ -681,7 +691,10 @@ pub fn start_process_id(
             }
             let mut g = god.lock().await;
             if let Some(proc) = g.clusters_db.get_mut(&id) {
-                if !*exit_rx_for_ready.borrow() && proc.generation == generation && proc.pm2_env.status == LAUNCHING_STATUS {
+                if !*exit_rx_for_ready.borrow()
+                    && proc.generation == generation
+                    && proc.pm2_env.status == LAUNCHING_STATUS
+                {
                     proc.pm2_env.status = ONLINE_STATUS.to_string();
                     proc.pm2_env.sync_flattened_env();
                     let _ = proc.ready_tx.send(true);
@@ -1228,11 +1241,7 @@ pub async fn kill_process_gracefully(
             break;
         }
         if let Some(ref mut rx) = exit_rx {
-            let _ = tokio::time::timeout(
-                Duration::from_millis(retry_ms),
-                rx.changed(),
-            )
-            .await;
+            let _ = tokio::time::timeout(Duration::from_millis(retry_ms), rx.changed()).await;
         } else {
             tokio::time::sleep(Duration::from_millis(retry_ms)).await;
         }
@@ -1731,7 +1740,10 @@ pub fn normalize_cron_expr(expr: &str) -> String {
     let parts: Vec<&str> = expr.split_whitespace().collect();
     if parts.len() == 5 {
         let dow = normalize_cron_dow_field(parts[4]);
-        format!("0 {} {} {} {} {}", parts[0], parts[1], parts[2], parts[3], dow)
+        format!(
+            "0 {} {} {} {} {}",
+            parts[0], parts[1], parts[2], parts[3], dow
+        )
     } else if parts.len() == 6 {
         let dow = normalize_cron_dow_field(parts[5]);
         format!(
@@ -1790,8 +1802,9 @@ pub fn spawn_worker_and_cron_loops(god: Arc<Mutex<God>>) {
             };
 
             for (id, _, _, _) in to_reload {
-                let _ = reload_process_id(Arc::clone(&god_worker), id, BTreeMap::new(), None, false)
-                    .await;
+                let _ =
+                    reload_process_id(Arc::clone(&god_worker), id, BTreeMap::new(), None, false)
+                        .await;
             }
         }
     });
@@ -1842,8 +1855,7 @@ pub fn spawn_worker_and_cron_loops(god: Arc<Mutex<God>>) {
             };
 
             for id in ids_to_restart {
-                let _ =
-                    restart_process_id(Arc::clone(&god_cron), id, BTreeMap::new(), None).await;
+                let _ = restart_process_id(Arc::clone(&god_cron), id, BTreeMap::new(), None).await;
             }
         }
     });
@@ -1879,7 +1891,11 @@ pub async fn handle_node_ipc_message(
     let Some(pm_id) = msg.get("pm_id").and_then(|v| v.as_u64()).map(|n| n as u32) else {
         return;
     };
-    let msg_pid = msg.get("pid").and_then(|v| v.as_u64()).map(|n| n as u32).unwrap_or(0);
+    let msg_pid = msg
+        .get("pid")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as u32)
+        .unwrap_or(0);
     let msg_type = msg.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
     let mut g = god.lock().await;
@@ -2019,7 +2035,10 @@ pub async fn handle_node_ipc_message(
                                 for (k, v) in data {
                                     let metric = if let Some(mobj) = v.as_object() {
                                         AxmMetric {
-                                            value: mobj.get("value").cloned().unwrap_or(Value::Null),
+                                            value: mobj
+                                                .get("value")
+                                                .cloned()
+                                                .unwrap_or(Value::Null),
                                             unit: mobj
                                                 .get("unit")
                                                 .and_then(|u| u.as_str())
@@ -2038,7 +2057,8 @@ pub async fn handle_node_ipc_message(
                         }
                         "axm:action" => {
                             if let Some(data) = obj.get("data").and_then(|d| d.as_object()) {
-                                if let Some(aname) = data.get("action_name").and_then(|a| a.as_str())
+                                if let Some(aname) =
+                                    data.get("action_name").and_then(|a| a.as_str())
                                 {
                                     if !proc
                                         .pm2_env
@@ -2104,7 +2124,13 @@ pub async fn handle_node_ipc_message(
             if let Some((ev_name, ev_data)) = extra_bus_event {
                 g.emit_bus_event(&ev_name, json!(pm_id), &name, &ns, ev_data);
             }
-            g.emit_bus_event("process:msg", json!(pm_id), &name, &ns, json!({ "raw": raw }));
+            g.emit_bus_event(
+                "process:msg",
+                json!(pm_id),
+                &name,
+                &ns,
+                json!({ "raw": raw }),
+            );
         }
         _ => {}
     }

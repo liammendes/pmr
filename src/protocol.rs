@@ -18,10 +18,7 @@ pub enum RpcRequest {
     #[serde(rename = "getMonitorData")]
     GetMonitorData,
     #[serde(rename = "prepare")]
-    Prepare {
-        env: Box<Pm2Env>,
-        instances: usize,
-    },
+    Prepare { env: Box<Pm2Env>, instances: usize },
     #[serde(rename = "startProcessId")]
     StartProcessId { id: u32 },
     #[serde(rename = "stopProcessId")]

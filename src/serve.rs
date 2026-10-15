@@ -279,7 +279,11 @@ pub async fn run_static_server() -> Result<()> {
                     )
                 } else if target_file.is_file() {
                     match fs::read(&target_file) {
-                        Ok(bytes) => ("HTTP/1.1 200 OK", content_type_for_path(&target_file), bytes),
+                        Ok(bytes) => (
+                            "HTTP/1.1 200 OK",
+                            content_type_for_path(&target_file),
+                            bytes,
+                        ),
                         Err(_) => (
                             "HTTP/1.1 500 Internal Server Error",
                             "text/plain",
@@ -310,10 +314,18 @@ pub async fn run_static_server() -> Result<()> {
                         if let Ok(bytes) = fs::read(&asset_path) {
                             ("HTTP/1.1 200 OK", content_type_for_path(&asset_path), bytes)
                         } else {
-                            ("HTTP/1.1 404 Not Found", "text/plain", b"404 Not Found".to_vec())
+                            (
+                                "HTTP/1.1 404 Not Found",
+                                "text/plain",
+                                b"404 Not Found".to_vec(),
+                            )
                         }
                     } else {
-                        ("HTTP/1.1 404 Not Found", "text/plain", b"404 Not Found".to_vec())
+                        (
+                            "HTTP/1.1 404 Not Found",
+                            "text/plain",
+                            b"404 Not Found".to_vec(),
+                        )
                     }
                 } else {
                     let fallback = root.join(homepage_c.trim_start_matches('/'));
