@@ -1,5 +1,6 @@
 import React from 'react';
 import {AbsoluteFill, Composition, Easing, Img, Still, interpolate, staticFile, useCurrentFrame} from 'remotion';
+import {AgentUseCase, WorkerUseCase} from './UseCases';
 
 const palette = {paper:'#faf9f6',ink:'#000000',blue:'#0057ff',track:'#e5e5e5'};
 const alignment = {left:100};
@@ -21,10 +22,11 @@ const Launch:React.FC<{reducedMotion?:boolean}>=({reducedMotion=false})=>{
   const frame=useCurrentFrame();
   const move=progress(frame,210,246,easeMove);
   const heroOpacity=1-progress(frame,204,228);
-  const scene=frame<240?0:frame<600?1:frame<1020?2:3;
-  const start=[0,240,600,1020][scene];
+  const scene=frame<240?0:frame<600?1:frame<1020?2:frame<1440?3:frame<1920?4:5;
+  const start=[0,240,600,1020,1440,1920][scene];
+  const end=[240,600,1020,1440,1920,2400][scene];
   const arrive=progress(frame,start+8,start+38);
-  const depart=scene===3?0:progress(frame,[210,566,986,1440][scene],[234,594,1014,1440][scene]);
+  const depart=scene===5?0:progress(frame,end-34,end-6);
   const opacity=scene===0?heroOpacity:arrive*(1-depart);
   const y=reducedMotion?0:22*(1-arrive)-12*depart;
   const logoX=alignment.left;
@@ -67,6 +69,8 @@ const Launch:React.FC<{reducedMotion?:boolean}>=({reducedMotion=false})=>{
       <Caption top={942}>Synthetic-frame demo on macOS · one real restart · physical Raspberry Pi hardware untested</Caption>
       <div style={{position:'absolute',left:alignment.left,top:1003,fontSize:22,color:palette.ink}}>Reboot recovery requires startup setup.</div>
     </div>}
+    {scene===4&&<div style={{opacity,transform:`translateY(${y}px)`}}><AgentUseCase reducedMotion={reducedMotion}/></div>}
+    {scene===5&&<div style={{opacity,transform:`translateY(${y}px)`}}><WorkerUseCase/></div>}
   </Base>;
 };
 const Poster=()=> <Base>
@@ -76,4 +80,4 @@ const Poster=()=> <Base>
   <div style={{position:'absolute',top:462,left:'calc(50% - 0.5px)',transform:'translateX(-50%)',width:'max-content',fontSize:20,lineHeight:'41px',color:palette.ink}}>A Rust process manager for developers and coding agents.</div>
   <Screenshot style={{position:'absolute',left:alignment.left,top:550,boxShadow:'0 3px 5px #12214118, 0 26px 55px #12214128'}}/>
 </Base>;
-export const Root=()=> <><Composition id="Launch" component={Launch} width={1920} height={1080} fps={60} durationInFrames={1440}/><Composition id="LaunchReducedMotion" component={Launch} defaultProps={{reducedMotion:true}} width={1920} height={1080} fps={60} durationInFrames={1440}/><Still id="Poster" component={Poster} width={1920} height={1080}/></>;
+export const Root=()=> <><Composition id="Launch" component={Launch} width={1920} height={1080} fps={60} durationInFrames={2400}/><Composition id="LaunchReducedMotion" component={Launch} defaultProps={{reducedMotion:true}} width={1920} height={1080} fps={60} durationInFrames={2400}/><Still id="Poster" component={Poster} width={1920} height={1080}/></>;

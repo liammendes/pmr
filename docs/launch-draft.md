@@ -4,7 +4,7 @@ Draft only. Nothing has been posted. The repository remains private. These posts
 
 ## Recommended main post
 
-Attach the static poster for an image-led announcement, or the 24-second video as an alternative. Use one, not both.
+Attach the static poster for an image-led announcement, or the 40-second video as an alternative. Use one, not both.
 
 I built pmr: a Rust process manager for developers and coding agents.
 
@@ -42,17 +42,20 @@ Rounded lowercase pmr lettering in a deep blue gradient is centred above the hea
 
 ## Video transcript and description
 
-The video is silent, 24 seconds long, 1920 × 1080 at 60 fps. All meaning is in the on-screen text. A reduced-motion version and static poster are available.
+The video is silent, 40 seconds long, 1920 × 1080 at 60 fps. All meaning is in the on-screen text. A reduced-motion version and static poster are available.
 
 - 0–4 seconds: Deep blue pmr lettering and a smaller, tilted terminal icon, with the official Liam Mendes logo at the bottom right. “Keep your processes running. A Rust process manager for developers and coding agents.”
 - 4–10 seconds: “Every process. One clear view.” Names, logs and resource use, ready for people and agents. A real `pmr monit` dashboard shows four isolated local demo services.
 - 10–17 seconds: “A faster process list.” Median JSON-list latency for 10 processes: pmr 1.0.0, 14.7 ms; PM2 7.0.4, 100.1 ms. PM2/pmr median command-time ratio: 6.8×. Thirty samples each on an M1 Max with 10 CPU cores, 32 GiB RAM, macOS 27.2 and Node 26.4.0. Measured on a working desktop on 15 October 2026. Application speed varies; full method, p95 and samples are in the benchmark report.
 - 17–24 seconds: “Self-healing camera services.” Supervise Raspberry Pi capture and upload workers; recover from process crashes. A real dashboard shows camera-sim online after one restart. The demo uses synthetic frames on macOS; Raspberry Pi hardware is untested. Reboot recovery requires startup setup.
 
+- 24–32 seconds: “Supervise your AI agents.” Run named agent workers and follow their inputs, steps and results. A real `pmr logs` capture shows three local processes: agent-planner, agent-builder and agent-reviewer. Agent events are scripted demo fixtures; no model API calls or actual AI decisions are shown.
+- 32–40 seconds: “Keep background jobs running.” A real PMR dashboard shows report, archive and checksum workers online. The processes write JSON reports, gzip archives and SHA-256 checks locally; the dashboard displays completed-job and processed-record metrics.
+
 ## Assets
 
 - [Static poster](assets/pmr-launch.png)
-- [24-second MP4](assets/pmr-launch.mp4)
+- [40-second MP4](assets/pmr-launch.mp4)
 - [Reduced-motion MP4](assets/pmr-launch-reduced-motion.mp4)
 - [Deep blue wordmark](assets/pmr-wordmark.svg)
 - [Terminal icon](assets/pmr-icon.png)

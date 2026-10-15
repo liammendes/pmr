@@ -104,9 +104,9 @@ components:
 
 PMR is a native process manager with a clear, useful identity. A deep blue vector wordmark and a native material terminal icon sit on warm paper. Black Manrope text and generous space keep the product evidence easy to read; the writing stays direct, warm and professional.
 
-This system governs Liam Mendes’s personal launch media in media/video: the 24-second film, reduced-motion film and static poster. The sequence moves from identity to the real dashboard, a measured JSON-list benchmark and self-healing camera services. It is a fixed media composition, with no responsive website or application-control system.
+This system governs Liam Mendes’s personal launch media in media/video: the 40-second film, reduced-motion film and static poster. The sequence moves from identity to the real dashboard, a measured JSON-list benchmark, self-healing camera services, scripted agent logs and local background workers. It is a fixed media composition, with no responsive website or application-control system.
 
-The implementation is [Launch.tsx](media/video/src/Launch.tsx), registered by [index.tsx](media/video/src/index.tsx). [PRODUCT.md](PRODUCT.md) records the durable brand commitments. The current blue identity supersedes the earlier Prism exploration.
+The implementation is [Launch.tsx](media/video/src/Launch.tsx) with [UseCases.tsx](media/video/src/UseCases.tsx), registered by [index.tsx](media/video/src/index.tsx). [PRODUCT.md](PRODUCT.md) records the durable brand commitments. The current blue identity supersedes the earlier Prism exploration.
 
 **Key Characteristics:**
 
@@ -139,30 +139,30 @@ Terminal captures retain their original colours. Icon material rendering adds hi
 
 ## Typography
 
-**Supporting family:** Manrope, with sans-serif fallback. The bundled Latin variable font spans weights 200–800; retain its [SIL Open Font License](media/video/public/fonts/manrope-LICENSE.txt). Literal command fragments use monospace. Native terminal lettering remains inside the unaltered JPEG captures.
+**Supporting family:** Manrope, with sans-serif fallback. The bundled Latin variable font spans weights 200–800; retain its [SIL Open Font License](media/video/public/fonts/manrope-LICENSE.txt). Literal command fragments use monospace. Native terminal lettering remains inside the original image and video captures.
 
 **Identity lettering:** PMR is the supplied [vector wordmark](media/video/public/pmr-wordmark.svg), with rounded, substantial lowercase forms. The [official Liam Mendes logo](media/video/public/liam-mendes.svg) is also vector artwork. Neither is reconstructed with a font.
 
-The frontmatter records the exact sizes used on the 1920 × 1080 canvas; there is no inferred modular scale. Display serves dashboard and benchmark headings; hero, camera and poster headings use their own optical sizes. Body serves film captions, method and limitations. The poster description uses 20px Manrope with a 41px line height. Metric uses tabular numerals. Label is the camera startup-setup note.
+The frontmatter records the exact sizes used on the 1920 × 1080 canvas; there is no inferred modular scale. Display serves dashboard, benchmark, agent and background-worker headings; hero, camera and poster headings use their own optical sizes. Body serves film captions, method and limitations. The poster description uses 20px Manrope with a 41px line height. Metric uses tabular numerals. Label is the camera startup-setup note.
 
 **The Text Carries Meaning Rule.** Keep headings, values and caveats as clear Manrope text. Preserve the vector PMR lettering and official author logo as assets, with their text alternatives.
 
 ## Layout
 
-The film and poster use a fixed **1920 × 1080** canvas. Both films run at **60 fps** for **1440 frames / 24 seconds**. Playback scales the whole frame; there are no breakpoints or responsive reflow rules. The transcript carries detailed meaning when terminal text becomes too small.
+The film and poster use a fixed **1920 × 1080** canvas. Both films run at **60 fps** for **2400 frames / 40 seconds**. Playback scales the whole frame; there are no breakpoints or responsive reflow rules. The transcript carries detailed meaning when terminal text becomes too small.
 
 In the film, PMR lettering, headings, descriptions and screenshots share **x=100**. The official author logo stays visible throughout at **148 × 73.5432 px**, anchored **24 px from the right and 24.019 px from the bottom**. The poster places the author logo at **(32, 32), 96 × 48 px**.
 
 | Surface | Current arrangement |
 | --- | --- |
 | Intro | Wordmark (100, 235), 1000 × 374; icon (1137, 281), 256 × 256, rotated 346.14° about its top-left corner; headline (100, 735); caption y=842. |
-| Evidence scenes | Compact wordmark (100, 64), scale 0.21; heading y=197; caption y=310; dashboard/camera capture (100, 425), 1720 px wide. |
+| Evidence scenes | Compact wordmark (100, 64), scale 0.21; heading y=197; caption y=310; dashboard/camera/agent/worker capture (100, 425), 1720 px wide. |
 | Benchmark | Comparison (100, 420), 1720 px wide; context lines y=816, 870 and 924. |
 | Poster | Wordmark centred at x=960, top y=85, 670 × 250.58; headline centred at x=960, top y=382, 56px/80px; description centred at x=959.5, top y=462, 20px/41px; capture (100, 550), 1720 px wide; no icon. |
 
 The poster centres its wordmark and copy, following Liam’s current Paper composition. Artwork has no repository URL or native-supervisor footer. The camera scene retains a factual startup-setup note at (100, 1003).
 
-The sequence is intro (0–4 s), dashboard (4–10 s), benchmark (10–17 s) and camera recovery (17–24 s). Each scene carries one dominant message.
+The sequence is intro (0–4 s), dashboard (4–10 s), benchmark (10–17 s), camera recovery (17–24 s), agent logs (24–32 s) and background workers (32–40 s). Each scene carries one dominant message.
 
 ## Elevation & Depth
 
@@ -193,11 +193,13 @@ The wordmark travels from (100, 235), scale 1, to (100, 64), scale 0.21 during f
 
 Headings have zero margin, tight tracking and an open surrounding field. All supporting text uses black; method and qualifications remain at the main caption size. No secondary grey text treatment is used.
 
-Scene entrances begin eight frames after the boundary and last 30 frames (500 ms), using cubic-bezier(0.23, 1, 0.32, 1). Opacity rises while the scene moves up from 22 px below. Dashboard and benchmark exits run for 28 frames, fading while moving 12 px up. Intro content fades during frames 204–228 (400 ms).
+Scene entrances begin eight frames after the boundary and last 30 frames (500 ms), using cubic-bezier(0.23, 1, 0.32, 1). Opacity rises while the scene moves up from 22 px below. Dashboard, benchmark, camera and agent exits run for 28 frames, fading while moving 12 px up. Intro content fades during frames 204–228 (400 ms).
 
 ### Real dashboard captures
 
 The Screenshot component uses [pmr-dashboard.jpg](media/video/public/pmr-dashboard.jpg) and [pmr-camera-recovery.jpg](media/video/public/pmr-camera-recovery.jpg). Preserve their original pixels, colours and proportions. The normal dashboard entrance combines scale 0.96→1 and rotateX(3deg→0), with a 2200-pixel perspective; the recovery capture uses scale 0.97→1. Film captions identify the capture context.
+
+The agent and worker scenes reuse the same capture width, position, clipping and diffuse lift. The agent scene plays the muted real terminal capture [pmr-agent-logs.mp4](media/video/public/pmr-agent-logs.mp4); its caption identifies the events as a scripted demo from supervised processes. The worker scene uses [pmr-background-workers.png](media/video/public/pmr-background-workers.png), showing local report, archive and checksum jobs. Keep those factual context captions at the body size beneath the captures.
 
 ### Benchmark comparison
 
@@ -205,7 +207,7 @@ Each row pairs a left-aligned manager name with a right-aligned, tabular value. 
 
 ### Accessible alternatives and provenance
 
-LaunchReducedMotion removes scene translation, the animated icon settle, screenshot transforms and bar growth. It preserves the icon’s static Paper rotation. It retains opacity transitions. The wordmark switches position and scale at frame 225, when its opacity is zero, with 21-frame (350 ms) fades on either side. This is a separate export.
+LaunchReducedMotion removes scene translation, the animated icon settle, screenshot transforms and bar growth. It preserves the icon’s static Paper rotation. It retains opacity transitions and substitutes [pmr-agent-logs.png](media/video/public/pmr-agent-logs.png) for the scrolling agent-log video. The wordmark switches position and scale at frame 225, when its opacity is zero, with 21-frame (350 ms) fades on either side. This is a separate export.
 
 Deliver the [static poster](docs/assets/pmr-launch.png), [reduced-motion film](docs/assets/pmr-launch-reduced-motion.mp4) and [written transcript plus poster alt text](docs/launch-draft.md). Both films are silent. JSX alternatives identify the logos, icon and real captures; exported PNG/MP4 files still need accompanying text alternatives.
 

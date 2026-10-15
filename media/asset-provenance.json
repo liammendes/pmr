@@ -24,6 +24,18 @@
     {
       "file": "pmr-launch.png",
       "origin": "Original Remotion composition rendered from media/video/src/Launch.tsx, Poster, 1920 x 1080. Matches Liam Mendes’s revised Paper poster: centred original vector pmr-wordmark.svg, official liam-mendes.svg at top left, real pmr-dashboard.jpg and black Manrope typography. No terminal icon on this poster."
+    },
+    {
+      "file": "pmr-agent-logs.mp4",
+      "origin": "Real pmr 1.0.0 logs shown in native macOS Terminal, captured with the Computer plugin on 15 October 2026. Three isolated local processes emit explicitly scripted agent-demo events; no model API calls. Timestamped native captures at about one-second intervals retain their timing in this 8-second, 30-fps H.264 clip. Cropped to terminal content; no reconstructed terminal UI."
+    },
+    {
+      "file": "pmr-agent-logs.png",
+      "origin": "Still at 3 seconds from pmr-agent-logs.mp4, the real native Terminal capture of scripted local agent-demo processes under pmr. Used in the reduced-motion film."
+    },
+    {
+      "file": "pmr-background-workers.png",
+      "origin": "Computer plugin capture of real pmr 1.0.0 monit in native macOS Terminal, 15 October 2026. Isolated report-worker, archive-worker and checksum-worker processes perform real JSON, gzip and SHA-256 jobs on generated records. Cropped to the dashboard panels; no reconstructed terminal UI."
     }
   ],
   "fonts": {

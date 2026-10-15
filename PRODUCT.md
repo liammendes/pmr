@@ -27,3 +27,5 @@ Liam Mendes personal project only. Direct, warm, professional writing. The curre
 ## Evidence on Hand
 
 Real native-terminal dashboard captures in docs/assets. Reproducible benchmark data in benchmarks/results/2026-10-15-m1-max. Camera demo uses synthetic frames and a deliberate process crash.
+
+The 40-second launch film also shows scripted agent events through real `pmr logs`, followed by real local report, archive and checksum workers. The agent scene illustrates process supervision; it is not an AI-model performance demonstration.
