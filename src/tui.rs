@@ -1,0 +1,399 @@
+use anyhow::Result;
+use crossterm::{
+    event::{self, Event as CEvent, KeyCode, KeyModifiers},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use ratatui::{
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
+    Terminal,
+};
+use std::collections::{BTreeMap, VecDeque};
+use std::fs;
+use std::io::{self, Write};
+use std::time::{Duration, Instant};
+
+use crate::client::PmrClient;
+use crate::process::ProcessDescription;
+use crate::ux::{bytes_to_size, time_since};
+
+pub async fn run_dashboard(client: &PmrClient) -> Result<()> {
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    let res = dashboard_loop(&mut terminal, client).await;
+
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    terminal.show_cursor()?;
+    res
+}
+
+async fn dashboard_loop(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    client: &PmrClient,
+) -> Result<()> {
+    let mut processes: Vec<ProcessDescription> = client.list().await.unwrap_or_default();
+    let mut selected_idx: usize = 0;
+    let mut active_pane: usize = 0; // 0: list, 1: logs, 2: metrics, 3: metadata
+    let mut logs_by_id: BTreeMap<u32, VecDeque<(bool, String)>> = BTreeMap::new();
+
+    // Seed initial logs from disk
+    for p in &processes {
+        let mut q = VecDeque::new();
+        if let Ok(content) = fs::read_to_string(&p.pm2_env.pm_out_log_path) {
+            for line in content.lines().rev().take(50).collect::<Vec<_>>().into_iter().rev() {
+                q.push_back((false, line.to_string()));
+            }
+        }
+        if let Ok(content) = fs::read_to_string(&p.pm2_env.pm_err_log_path) {
+            for line in content.lines().rev().take(25).collect::<Vec<_>>().into_iter().rev() {
+                q.push_back((true, line.to_string()));
+            }
+        }
+        logs_by_id.insert(p.pm_id, q);
+    }
+
+    let mut bus_rx = client.subscribe_bus().await.ok();
+    let mut last_refresh = Instant::now();
+
+    loop {
+        if let Some(ref mut rx) = bus_rx {
+            while let Ok(ev) = rx.try_recv() {
+                if ev.event == "log:out" || ev.event == "log:err" {
+                    if let Some(id) = ev.process.pm_id.as_u64().map(|n| n as u32) {
+                        let is_err = ev.event == "log:err";
+                        if let Some(data) = ev.data.get("data").and_then(|d| d.as_str()) {
+                            let q = logs_by_id.entry(id).or_default();
+                            for l in data.lines() {
+                                q.push_back((is_err, l.to_string()));
+                                if q.len() > 200 {
+                                    q.pop_front();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if last_refresh.elapsed() >= Duration::from_millis(800) {
+            if let Ok(new_list) = client.list().await {
+                processes = new_list;
+                if !processes.is_empty() && selected_idx >= processes.len() {
+                    selected_idx = processes.len() - 1;
+                }
+            }
+            last_refresh = Instant::now();
+        }
+
+        let selected_proc = processes.get(selected_idx).cloned();
+
+        terminal.draw(|f| {
+            let size = f.area();
+            let root_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Percentage(68),
+                    Constraint::Percentage(27),
+                    Constraint::Length(1),
+                ])
+                .split(size);
+
+            let top_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(34), Constraint::Percentage(66)])
+                .split(root_chunks[0]);
+
+            let bottom_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(34), Constraint::Percentage(66)])
+                .split(root_chunks[1]);
+
+            let pane_border = |idx: usize| -> Style {
+                if active_pane == idx {
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                }
+            };
+
+            // 1. Top-Left: Process List
+            let items: Vec<ListItem> = processes
+                .iter()
+                .map(|p| {
+                    let mem_mb = (p.monit.memory as f64) / 1_048_576.0;
+                    let status_color = match p.pm2_env.status.as_str() {
+                        "online" => Color::Green,
+                        "launching" | "waiting restart" => Color::Yellow,
+                        _ => Color::Red,
+                    };
+                    let line = Line::from(vec![
+                        Span::styled(
+                            format!("[{:>2}] ", p.pm_id),
+                            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(
+                            format!("{:<14} ", p.name),
+                            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                        ),
+                        Span::raw(format!("Mem: {:>5.1} MB  CPU: {:>4.1}%  ", mem_mb, p.monit.cpu)),
+                        Span::styled(
+                            p.pm2_env.status.clone(),
+                            Style::default().fg(status_color).add_modifier(Modifier::BOLD),
+                        ),
+                    ]);
+                    ListItem::new(line)
+                })
+                .collect();
+
+            let mut list_state = ListState::default();
+            if !processes.is_empty() {
+                list_state.select(Some(selected_idx));
+            }
+
+            let proc_list = List::new(items)
+                .block(
+                    Block::default()
+                        .title(" Process List ")
+                        .borders(Borders::ALL)
+                        .border_style(pane_border(0)),
+                )
+                .highlight_style(
+                    Style::default()
+                        .bg(Color::Blue)
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                );
+            f.render_stateful_widget(proc_list, top_chunks[0], &mut list_state);
+
+            // 2. Top-Right: Logs
+            let log_title = match selected_proc {
+                Some(ref sp) => format!(" {} Logs ", sp.name),
+                None => " Logs ".to_string(),
+            };
+            let log_lines: Vec<Line> = selected_proc
+                .as_ref()
+                .and_then(|sp| logs_by_id.get(&sp.pm_id))
+                .map(|q| {
+                    let max_rows = top_chunks[1].height.saturating_sub(2) as usize;
+                    let skip = q.len().saturating_sub(max_rows);
+                    q.iter()
+                        .skip(skip)
+                        .map(|(is_err, text)| {
+                            let prefix_color = if *is_err { Color::Red } else { Color::Green };
+                            let name = selected_proc.as_ref().map(|p| p.name.as_str()).unwrap_or("");
+                            Line::from(vec![
+                                Span::styled(
+                                    format!("{} > ", name),
+                                    Style::default().fg(prefix_color),
+                                ),
+                                Span::raw(text.clone()),
+                            ])
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let logs_widget = Paragraph::new(log_lines)
+                .block(
+                    Block::default()
+                        .title(log_title)
+                        .borders(Borders::ALL)
+                        .border_style(pane_border(1)),
+                )
+                .wrap(Wrap { trim: false });
+            f.render_widget(logs_widget, top_chunks[1]);
+
+            // 3. Bottom-Left: Custom Metrics
+            let mut metric_lines = Vec::new();
+            if let Some(ref sp) = selected_proc {
+                metric_lines.push(Line::from(vec![
+                    Span::styled("Memory usage: ", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        bytes_to_size(sp.monit.memory, 1),
+                        Style::default().fg(Color::Cyan),
+                    ),
+                ]));
+                metric_lines.push(Line::from(vec![
+                    Span::styled("CPU usage   : ", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        format!("{}%", sp.monit.cpu),
+                        Style::default().fg(Color::Green),
+                    ),
+                ]));
+                for (k, m) in &sp.pm2_env.axm_monitor {
+                    let v = m
+                        .value
+                        .as_str()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| m.value.to_string());
+                    metric_lines.push(Line::from(vec![
+                        Span::styled(
+                            format!("{}: ", k),
+                            Style::default().add_modifier(Modifier::BOLD),
+                        ),
+                        Span::raw(format!("{} {}", v, m.unit)),
+                    ]));
+                }
+            }
+            let metrics_widget = Paragraph::new(metric_lines).block(
+                Block::default()
+                    .title(" Custom Metrics ")
+                    .borders(Borders::ALL)
+                    .border_style(pane_border(2)),
+            );
+            f.render_widget(metrics_widget, bottom_chunks[0]);
+
+            // 4. Bottom-Right: Metadata
+            let mut meta_lines = Vec::new();
+            if let Some(ref sp) = selected_proc {
+                let e = &sp.pm2_env;
+                let uptime = if e.status == "online" && e.pm_uptime > 0 {
+                    time_since(e.pm_uptime)
+                } else {
+                    "0".to_string()
+                };
+                let pairs = [
+                    ("App Name", e.name.clone()),
+                    ("Namespace", e.namespace.clone()),
+                    ("Version", e.version.clone()),
+                    ("Restarts", e.restart_time.to_string()),
+                    ("Uptime", uptime),
+                    ("Script path", e.pm_exec_path.clone()),
+                    ("Script args", e.args.join(" ")),
+                    ("Interpreter", e.exec_interpreter.clone()),
+                    ("Exec mode", e.exec_mode.clone()),
+                    ("Exec cwd", e.pm_cwd.clone()),
+                    (
+                        "Watch & reload",
+                        if e.watch { "✔".to_string() } else { "✘".to_string() },
+                    ),
+                ];
+                for (k, v) in pairs {
+                    meta_lines.push(Line::from(vec![
+                        Span::styled(
+                            format!("{:<16}: ", k),
+                            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                        ),
+                        Span::raw(v),
+                    ]));
+                }
+            }
+            let meta_widget = Paragraph::new(meta_lines).block(
+                Block::default()
+                    .title(" Metadata ")
+                    .borders(Borders::ALL)
+                    .border_style(pane_border(3)),
+            );
+            f.render_widget(meta_widget, bottom_chunks[1]);
+
+            // 5. Status Bar
+            let help_line = Line::from(vec![
+                Span::raw(
+                    " left/right/tab: switch boards | up/down: select | r: restart | s: stop | q/Ctrl-C: exit ",
+                ),
+                Span::styled(
+                    "  PMR Dashboard ",
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                ),
+            ]);
+            f.render_widget(Paragraph::new(help_line), root_chunks[2]);
+        })?;
+
+        if event::poll(Duration::from_millis(100))? {
+            if let CEvent::Key(key) = event::read()? {
+                match key.code {
+                    KeyCode::Char('q') | KeyCode::Esc => break,
+                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
+                    KeyCode::Left => {
+                        active_pane = if active_pane == 0 { 3 } else { active_pane - 1 };
+                    }
+                    KeyCode::Right | KeyCode::Tab => {
+                        active_pane = (active_pane + 1) % 4;
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        if !processes.is_empty() && selected_idx > 0 {
+                            selected_idx -= 1;
+                        }
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        if !processes.is_empty() && selected_idx + 1 < processes.len() {
+                            selected_idx += 1;
+                        }
+                    }
+                    KeyCode::Char('r') => {
+                        if let Some(ref sp) = selected_proc {
+                            let _ = client
+                                .restart(&sp.pm_id.to_string(), &Default::default())
+                                .await;
+                        }
+                    }
+                    KeyCode::Char('s') => {
+                        if let Some(ref sp) = selected_proc {
+                            let _ = client.stop(&sp.pm_id.to_string()).await;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Legacy terminal bar monitor (`pmr imonit`), matching `lib/API/Monit.js`.
+pub async fn run_imonit(client: &PmrClient) -> Result<()> {
+    let mut sys = sysinfo::System::new_all();
+    sys.refresh_memory();
+    let total_mem = sys.total_memory().max(1);
+
+    loop {
+        let procs = client.list().await?;
+        print!("\x1b[2J\x1b[H");
+        println!(
+            "\x1b[32m⌬ PMR \x1b[39mmonitoring\x1b[96m (Press Ctrl-C to exit)\x1b[39m\n"
+        );
+        for p in &procs {
+            let cpu_pct = p.monit.cpu.clamp(0.0, 100.0);
+            let cpu_filled = ((cpu_pct / 100.0) * 30.0).round() as usize;
+            let cpu_bar = format!(
+                "\x1b[44m{}\x1b[49m{}",
+                " ".repeat(cpu_filled),
+                "-".repeat(30usize.saturating_sub(cpu_filled))
+            );
+
+            let mem_ratio = ((p.monit.memory as f64) / (total_mem as f64 / 5.0)).clamp(0.0, 1.0);
+            let mem_filled = (mem_ratio * 30.0).round() as usize;
+            let mem_bar = format!(
+                "\x1b[41m{}\x1b[49m{}",
+                " ".repeat(mem_filled),
+                "-".repeat(30usize.saturating_sub(mem_filled))
+            );
+
+            println!(
+                " ● {:<20} [{:>2}] [{}] [{}]",
+                p.name,
+                p.pm_id,
+                p.pm2_env.exec_mode,
+                p.pm2_env.status
+            );
+            println!("   CPU: [{}] {:>5.1}%", cpu_bar, p.monit.cpu);
+            println!(
+                "   MEM: [{}] {}\n",
+                mem_bar,
+                bytes_to_size(p.monit.memory, 1)
+            );
+        }
+        io::stdout().flush()?;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
