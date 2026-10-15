@@ -10,7 +10,7 @@ homepage = "https://github.com/liammendes/pmr"
 readme = "README.md"
 keywords = ["process-manager", "supervisor", "cli", "pm2", "automation"]
 categories = ["command-line-utilities", "development-tools"]
-include = ["src/**", "tests/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE", "NOTICE", "CHANGELOG.md"]
+include = ["/src/**", "/tests/**", "/Cargo.toml", "/Cargo.lock", "/README.md", "/LICENSE", "/NOTICE", "/CHANGELOG.md"]
 default-run = "pmr"
 
 [lib]

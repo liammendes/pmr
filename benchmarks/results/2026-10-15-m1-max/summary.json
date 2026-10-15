@@ -1,0 +1,191 @@
+[
+  {
+    "metric": "help_cli",
+    "manager": "pmr",
+    "n": 30,
+    "median_ms": 11.062562499999999,
+    "p95_ms": 13.252583,
+    "min_ms": 9.496542,
+    "max_ms": 14.062542
+  },
+  {
+    "metric": "help_cli",
+    "manager": "pm2-6.0.14",
+    "n": 30,
+    "median_ms": 100.10849999999999,
+    "p95_ms": 104.549542,
+    "min_ms": 93.654792,
+    "max_ms": 107.668084
+  },
+  {
+    "metric": "help_cli",
+    "manager": "pm2-7.0.4",
+    "n": 30,
+    "median_ms": 91.628771,
+    "p95_ms": 98.695333,
+    "min_ms": 87.328792,
+    "max_ms": 100.7
+  },
+  {
+    "metric": "cold_daemon_ping",
+    "manager": "pmr",
+    "n": 15,
+    "median_ms": 65.483084,
+    "p95_ms": 67.282375,
+    "min_ms": 63.584667,
+    "max_ms": 67.282375
+  },
+  {
+    "metric": "cold_daemon_ping",
+    "manager": "pm2-6.0.14",
+    "n": 15,
+    "median_ms": 308.793333,
+    "p95_ms": 392.900791,
+    "min_ms": 303.443667,
+    "max_ms": 392.900791
+  },
+  {
+    "metric": "cold_daemon_ping",
+    "manager": "pm2-7.0.4",
+    "n": 15,
+    "median_ms": 294.14775,
+    "p95_ms": 306.262958,
+    "min_ms": 284.131958,
+    "max_ms": 306.262958
+  },
+  {
+    "metric": "list_empty_cli",
+    "manager": "pmr",
+    "n": 30,
+    "median_ms": 14.8070415,
+    "p95_ms": 18.210083,
+    "min_ms": 13.4285,
+    "max_ms": 18.721167
+  },
+  {
+    "metric": "list_empty_cli",
+    "manager": "pm2-6.0.14",
+    "n": 30,
+    "median_ms": 102.9899165,
+    "p95_ms": 140.41025,
+    "min_ms": 98.915542,
+    "max_ms": 161.82225
+  },
+  {
+    "metric": "list_empty_cli",
+    "manager": "pm2-7.0.4",
+    "n": 30,
+    "median_ms": 96.0496665,
+    "p95_ms": 120.25075,
+    "min_ms": 89.231084,
+    "max_ms": 144.615334
+  },
+  {
+    "metric": "start_to_http_ready",
+    "manager": "pmr",
+    "n": 15,
+    "median_ms": 141.348,
+    "p95_ms": 162.524084,
+    "min_ms": 134.174041,
+    "max_ms": 162.524084
+  },
+  {
+    "metric": "start_to_http_ready",
+    "manager": "pm2-6.0.14",
+    "n": 15,
+    "median_ms": 204.4345,
+    "p95_ms": 220.257625,
+    "min_ms": 193.515292,
+    "max_ms": 220.257625
+  },
+  {
+    "metric": "start_to_http_ready",
+    "manager": "pm2-7.0.4",
+    "n": 15,
+    "median_ms": 173.802,
+    "p95_ms": 223.602333,
+    "min_ms": 164.7165,
+    "max_ms": 223.602333
+  },
+  {
+    "metric": "list_one_cli",
+    "manager": "pmr",
+    "n": 30,
+    "median_ms": 13.972396,
+    "p95_ms": 17.278959,
+    "min_ms": 13.199709,
+    "max_ms": 22.138917
+  },
+  {
+    "metric": "list_one_cli",
+    "manager": "pm2-6.0.14",
+    "n": 30,
+    "median_ms": 104.6218125,
+    "p95_ms": 107.31025,
+    "min_ms": 101.690334,
+    "max_ms": 108.647083
+  },
+  {
+    "metric": "list_one_cli",
+    "manager": "pm2-7.0.4",
+    "n": 30,
+    "median_ms": 96.9326875,
+    "p95_ms": 100.207,
+    "min_ms": 93.576792,
+    "max_ms": 101.473208
+  },
+  {
+    "metric": "restart_to_http_ready",
+    "manager": "pmr",
+    "n": 15,
+    "median_ms": 133.872583,
+    "p95_ms": 158.787667,
+    "min_ms": 121.149583,
+    "max_ms": 158.787667
+  },
+  {
+    "metric": "restart_to_http_ready",
+    "manager": "pm2-6.0.14",
+    "n": 15,
+    "median_ms": 328.805542,
+    "p95_ms": 350.082458,
+    "min_ms": 322.538333,
+    "max_ms": 350.082458
+  },
+  {
+    "metric": "restart_to_http_ready",
+    "manager": "pm2-7.0.4",
+    "n": 15,
+    "median_ms": 300.608541,
+    "p95_ms": 307.501833,
+    "min_ms": 296.468167,
+    "max_ms": 307.501833
+  },
+  {
+    "metric": "list_ten_cli",
+    "manager": "pmr",
+    "n": 30,
+    "median_ms": 14.7040835,
+    "p95_ms": 16.751084,
+    "min_ms": 14.061208,
+    "max_ms": 17.068375
+  },
+  {
+    "metric": "list_ten_cli",
+    "manager": "pm2-6.0.14",
+    "n": 30,
+    "median_ms": 108.057146,
+    "p95_ms": 110.987667,
+    "min_ms": 105.470875,
+    "max_ms": 111.575625
+  },
+  {
+    "metric": "list_ten_cli",
+    "manager": "pm2-7.0.4",
+    "n": 30,
+    "median_ms": 100.0913955,
+    "p95_ms": 105.181375,
+    "min_ms": 97.185792,
+    "max_ms": 107.083417
+  }
+]

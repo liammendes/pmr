@@ -1,0 +1,23 @@
+{
+  "name": "pmr-showcase",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "studio": "remotion studio src/index.tsx",
+    "render": "remotion render src/index.tsx Launch out/pmr-launch.mp4",
+    "render:reduced": "remotion render src/index.tsx LaunchReducedMotion out/pmr-launch-reduced-motion.mp4",
+    "still": "remotion still src/index.tsx Poster out/pmr-launch.png"
+  },
+  "dependencies": {
+    "@fontsource-variable/manrope": "5.3.0",
+    "@remotion/cli": "4.0.534",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "remotion": "4.0.534"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.0",
+    "@types/react-dom": "19.2.0",
+    "typescript": "5.9.3"
+  }
+}

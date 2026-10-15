@@ -1,0 +1,4223 @@
+{
+  "metadata": {
+    "started_at_utc": "2026-10-15T20:28:20.194444+00:00",
+    "system": "Darwin",
+    "architecture": "arm64",
+    "os": "27.2",
+    "os_build": "26B5112a",
+    "model": "MacBookPro18,2",
+    "cpu": "Apple M1 Max",
+    "logical_cpus": 10,
+    "memory_bytes": "34359738368",
+    "load_average_start": [
+      8.01025390625,
+      7.87255859375,
+      15.09326171875
+    ],
+    "node": "v26.4.0",
+    "rust": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "source_commit": "7edd0a1c550e6a12dc526dbfa34d5716ec7afd8d",
+    "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pmr_binary_sha256": "52572c713d627482fda01538a9f190e23da8be38facff50c04a77b951399c303",
+    "fixture_sha256": "f00a2089143ec6c45f9afb153a6fd9ba0ece23c4cfc75a1dc9fd3e86eddcd727",
+    "configuration": {
+      "cli_samples": 30,
+      "lifecycle_samples": 15,
+      "http_samples": 3,
+      "http_seconds": 5,
+      "http_connections": 20,
+      "http_pipelining": 1,
+      "cli_warmups": 5,
+      "lifecycle_warmups": 2,
+      "http_warmup_seconds": 2
+    },
+    "status": "complete",
+    "versions": [
+      "pmr",
+      "pm2-6.0.14",
+      "pm2-7.0.4"
+    ],
+    "pmr_version": "1.0.0",
+    "autocannon_version": "autocannon v7.15.0\nnode v26.4.0",
+    "load_average_end": [
+      7.48974609375,
+      7.6748046875,
+      13.76171875
+    ],
+    "finished_at_utc": "2026-10-15T20:31:03.425320+00:00"
+  },
+  "latency_samples": [
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 1,
+      "milliseconds": 10.705958
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 1,
+      "milliseconds": 99.559875
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 1,
+      "milliseconds": 94.487791
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 2,
+      "milliseconds": 95.717583
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 2,
+      "milliseconds": 104.038542
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 2,
+      "milliseconds": 14.062542
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 3,
+      "milliseconds": 11.059292
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 3,
+      "milliseconds": 101.385084
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 3,
+      "milliseconds": 95.548709
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 4,
+      "milliseconds": 91.602667
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 4,
+      "milliseconds": 99.612959
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 4,
+      "milliseconds": 11.133417
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 5,
+      "milliseconds": 9.861542
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 5,
+      "milliseconds": 107.668084
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 5,
+      "milliseconds": 100.7
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 6,
+      "milliseconds": 93.381417
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 6,
+      "milliseconds": 103.557334
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 6,
+      "milliseconds": 11.338084
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 7,
+      "milliseconds": 11.503833
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 7,
+      "milliseconds": 101.323875
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 7,
+      "milliseconds": 94.596125
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 8,
+      "milliseconds": 98.695333
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 8,
+      "milliseconds": 100.233333
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 8,
+      "milliseconds": 10.77125
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 9,
+      "milliseconds": 10.073125
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 9,
+      "milliseconds": 102.698417
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 9,
+      "milliseconds": 91.433792
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 10,
+      "milliseconds": 91.065458
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 10,
+      "milliseconds": 104.549542
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 10,
+      "milliseconds": 11.326875
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 11,
+      "milliseconds": 9.496542
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 11,
+      "milliseconds": 98.246209
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 11,
+      "milliseconds": 92.707292
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 12,
+      "milliseconds": 93.7665
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 12,
+      "milliseconds": 100.297042
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 12,
+      "milliseconds": 12.221292
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 13,
+      "milliseconds": 11.225541
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 13,
+      "milliseconds": 101.859666
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 13,
+      "milliseconds": 94.297459
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 14,
+      "milliseconds": 95.607792
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 14,
+      "milliseconds": 104.125708
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 14,
+      "milliseconds": 12.043208
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 15,
+      "milliseconds": 11.266
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 15,
+      "milliseconds": 99.144916
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 15,
+      "milliseconds": 95.850542
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 16,
+      "milliseconds": 93.963917
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 16,
+      "milliseconds": 102.399125
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 16,
+      "milliseconds": 10.4905
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 17,
+      "milliseconds": 10.301667
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 17,
+      "milliseconds": 93.654792
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 17,
+      "milliseconds": 92.243916
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 18,
+      "milliseconds": 88.262292
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 18,
+      "milliseconds": 97.012917
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 18,
+      "milliseconds": 11.387875
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 19,
+      "milliseconds": 10.0905
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 19,
+      "milliseconds": 100.611333
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 19,
+      "milliseconds": 90.042209
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 20,
+      "milliseconds": 90.985834
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 20,
+      "milliseconds": 97.723
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 20,
+      "milliseconds": 10.476083
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 21,
+      "milliseconds": 9.549167
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 21,
+      "milliseconds": 95.699542
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 21,
+      "milliseconds": 89.27
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 22,
+      "milliseconds": 87.328792
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 22,
+      "milliseconds": 99.983667
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 22,
+      "milliseconds": 10.572417
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 23,
+      "milliseconds": 10.279083
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 23,
+      "milliseconds": 97.690292
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 23,
+      "milliseconds": 89.356083
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 24,
+      "milliseconds": 91.457958
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 24,
+      "milliseconds": 96.8135
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 24,
+      "milliseconds": 11.065833
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 25,
+      "milliseconds": 11.311333
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 25,
+      "milliseconds": 98.536916
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 25,
+      "milliseconds": 91.654875
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 26,
+      "milliseconds": 91.265458
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 26,
+      "milliseconds": 102.284125
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 26,
+      "milliseconds": 10.658875
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 27,
+      "milliseconds": 10.59875
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 27,
+      "milliseconds": 94.779875
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 27,
+      "milliseconds": 90.169833
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 28,
+      "milliseconds": 88.67525
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 28,
+      "milliseconds": 96.256083
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 28,
+      "milliseconds": 13.252583
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 29,
+      "milliseconds": 11.357667
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 29,
+      "milliseconds": 95.511875
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 29,
+      "milliseconds": 88.19175
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 30,
+      "milliseconds": 90.803708
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 30,
+      "milliseconds": 101.103625
+    },
+    {
+      "metric": "help_cli",
+      "manager": "pmr",
+      "sample": 30,
+      "milliseconds": 12.254042
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pmr",
+      "sample": 1,
+      "milliseconds": 66.103791
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-6.0.14",
+      "sample": 1,
+      "milliseconds": 311.117375
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-7.0.4",
+      "sample": 1,
+      "milliseconds": 301.410334
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-7.0.4",
+      "sample": 2,
+      "milliseconds": 287.205583
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-6.0.14",
+      "sample": 2,
+      "milliseconds": 313.245584
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pmr",
+      "sample": 2,
+      "milliseconds": 66.247292
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pmr",
+      "sample": 3,
+      "milliseconds": 64.577417
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-6.0.14",
+      "sample": 3,
+      "milliseconds": 358.357792
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-7.0.4",
+      "sample": 3,
+      "milliseconds": 299.796583
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-7.0.4",
+      "sample": 4,
+      "milliseconds": 302.450125
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-6.0.14",
+      "sample": 4,
+      "milliseconds": 319.846708
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pmr",
+      "sample": 4,
+      "milliseconds": 63.994166
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pmr",
+      "sample": 5,
+      "milliseconds": 67.282375
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-6.0.14",
+      "sample": 5,
+      "milliseconds": 307.97475
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-7.0.4",
+      "sample": 5,
+      "milliseconds": 286.986125
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-7.0.4",
+      "sample": 6,
+      "milliseconds": 299.306583
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-6.0.14",
+      "sample": 6,
+      "milliseconds": 320.023709
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pmr",
+      "sample": 6,
+      "milliseconds": 66.911959
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pmr",
+      "sample": 7,
+      "milliseconds": 64.979125
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-6.0.14",
+      "sample": 7,
+      "milliseconds": 324.689959
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-7.0.4",
+      "sample": 7,
+      "milliseconds": 295.958333
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-7.0.4",
+      "sample": 8,
+      "milliseconds": 284.636958
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-6.0.14",
+      "sample": 8,
+      "milliseconds": 308.036792
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pmr",
+      "sample": 8,
+      "milliseconds": 65.483084
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pmr",
+      "sample": 9,
+      "milliseconds": 66.648792
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-6.0.14",
+      "sample": 9,
+      "milliseconds": 392.900791
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-7.0.4",
+      "sample": 9,
+      "milliseconds": 290.275833
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-7.0.4",
+      "sample": 10,
+      "milliseconds": 294.954
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-6.0.14",
+      "sample": 10,
+      "milliseconds": 303.502875
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pmr",
+      "sample": 10,
+      "milliseconds": 64.388458
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pmr",
+      "sample": 11,
+      "milliseconds": 65.286042
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-6.0.14",
+      "sample": 11,
+      "milliseconds": 308.793333
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-7.0.4",
+      "sample": 11,
+      "milliseconds": 294.14775
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-7.0.4",
+      "sample": 12,
+      "milliseconds": 288.458666
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-6.0.14",
+      "sample": 12,
+      "milliseconds": 305.411167
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pmr",
+      "sample": 12,
+      "milliseconds": 66.417917
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pmr",
+      "sample": 13,
+      "milliseconds": 64.216208
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-6.0.14",
+      "sample": 13,
+      "milliseconds": 306.676042
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-7.0.4",
+      "sample": 13,
+      "milliseconds": 284.131958
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-7.0.4",
+      "sample": 14,
+      "milliseconds": 291.240333
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-6.0.14",
+      "sample": 14,
+      "milliseconds": 303.443667
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pmr",
+      "sample": 14,
+      "milliseconds": 63.584667
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pmr",
+      "sample": 15,
+      "milliseconds": 67.254042
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-6.0.14",
+      "sample": 15,
+      "milliseconds": 306.453084
+    },
+    {
+      "metric": "cold_daemon_ping",
+      "manager": "pm2-7.0.4",
+      "sample": 15,
+      "milliseconds": 306.262958
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 1,
+      "milliseconds": 18.721167
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 1,
+      "milliseconds": 161.82225
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 1,
+      "milliseconds": 144.615334
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 2,
+      "milliseconds": 120.25075
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 2,
+      "milliseconds": 121.420209
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 2,
+      "milliseconds": 15.411917
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 3,
+      "milliseconds": 15.443292
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 3,
+      "milliseconds": 116.5595
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 3,
+      "milliseconds": 111.579458
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 4,
+      "milliseconds": 112.079292
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 4,
+      "milliseconds": 108.410584
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 4,
+      "milliseconds": 14.347417
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 5,
+      "milliseconds": 14.712333
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 5,
+      "milliseconds": 119.776041
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 5,
+      "milliseconds": 100.886166
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 6,
+      "milliseconds": 96.60275
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 6,
+      "milliseconds": 103.480208
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 6,
+      "milliseconds": 14.109
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 7,
+      "milliseconds": 13.4285
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 7,
+      "milliseconds": 106.025333
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 7,
+      "milliseconds": 96.146291
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 8,
+      "milliseconds": 98.447292
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 8,
+      "milliseconds": 114.527333
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 8,
+      "milliseconds": 13.913333
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 9,
+      "milliseconds": 15.56475
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 9,
+      "milliseconds": 105.054208
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 9,
+      "milliseconds": 92.96025
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 10,
+      "milliseconds": 95.953042
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 10,
+      "milliseconds": 101.45475
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 10,
+      "milliseconds": 14.314417
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 11,
+      "milliseconds": 14.057083
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 11,
+      "milliseconds": 101.296458
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 11,
+      "milliseconds": 95.775583
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 12,
+      "milliseconds": 96.468375
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 12,
+      "milliseconds": 99.928959
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 12,
+      "milliseconds": 14.713167
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 13,
+      "milliseconds": 17.547959
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 13,
+      "milliseconds": 100.676875
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 13,
+      "milliseconds": 101.534458
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 14,
+      "milliseconds": 97.457709
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 14,
+      "milliseconds": 107.160083
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 14,
+      "milliseconds": 14.106833
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 15,
+      "milliseconds": 13.536125
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 15,
+      "milliseconds": 101.452375
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 15,
+      "milliseconds": 96.722208
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 16,
+      "milliseconds": 95.16375
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 16,
+      "milliseconds": 102.671
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 16,
+      "milliseconds": 14.825833
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 17,
+      "milliseconds": 15.137708
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 17,
+      "milliseconds": 100.908875
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 17,
+      "milliseconds": 99.637458
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 18,
+      "milliseconds": 94.581833
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 18,
+      "milliseconds": 100.31725
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 18,
+      "milliseconds": 18.210083
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 19,
+      "milliseconds": 15.636709
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 19,
+      "milliseconds": 103.747625
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 19,
+      "milliseconds": 95.911542
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 20,
+      "milliseconds": 97.561041
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 20,
+      "milliseconds": 100.329541
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 20,
+      "milliseconds": 14.187667
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 21,
+      "milliseconds": 14.997666
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 21,
+      "milliseconds": 140.41025
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 21,
+      "milliseconds": 93.68825
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 22,
+      "milliseconds": 93.321167
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 22,
+      "milliseconds": 101.250917
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 22,
+      "milliseconds": 13.703042
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 23,
+      "milliseconds": 17.629625
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 23,
+      "milliseconds": 104.595917
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 23,
+      "milliseconds": 98.433333
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 24,
+      "milliseconds": 93.691583
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 24,
+      "milliseconds": 99.43625
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 24,
+      "milliseconds": 13.933792
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 25,
+      "milliseconds": 14.448583
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 25,
+      "milliseconds": 99.612834
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 25,
+      "milliseconds": 91.595791
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 26,
+      "milliseconds": 91.419667
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 26,
+      "milliseconds": 101.500416
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 26,
+      "milliseconds": 17.446584
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 27,
+      "milliseconds": 14.833416
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 27,
+      "milliseconds": 98.915542
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 27,
+      "milliseconds": 91.901084
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 28,
+      "milliseconds": 89.231084
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 28,
+      "milliseconds": 99.647042
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 28,
+      "milliseconds": 14.78825
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 29,
+      "milliseconds": 16.953542
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 29,
+      "milliseconds": 104.413833
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 29,
+      "milliseconds": 94.773792
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 30,
+      "milliseconds": 93.958
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 30,
+      "milliseconds": 103.308833
+    },
+    {
+      "metric": "list_empty_cli",
+      "manager": "pmr",
+      "sample": 30,
+      "milliseconds": 15.046458
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pmr",
+      "sample": 1,
+      "milliseconds": 135.375167
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 1,
+      "milliseconds": 210.897708
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 1,
+      "milliseconds": 168.829541
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 2,
+      "milliseconds": 167.539042
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 2,
+      "milliseconds": 193.515292
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pmr",
+      "sample": 2,
+      "milliseconds": 136.233625
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pmr",
+      "sample": 3,
+      "milliseconds": 141.348
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 3,
+      "milliseconds": 194.012458
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 3,
+      "milliseconds": 174.26475
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 4,
+      "milliseconds": 173.802
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 4,
+      "milliseconds": 218.398708
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pmr",
+      "sample": 4,
+      "milliseconds": 136.153958
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pmr",
+      "sample": 5,
+      "milliseconds": 134.174041
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 5,
+      "milliseconds": 201.482042
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 5,
+      "milliseconds": 177.70275
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 6,
+      "milliseconds": 173.023917
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 6,
+      "milliseconds": 220.257625
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pmr",
+      "sample": 6,
+      "milliseconds": 154.59875
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pmr",
+      "sample": 7,
+      "milliseconds": 162.524084
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 7,
+      "milliseconds": 197.852875
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 7,
+      "milliseconds": 180.047459
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 8,
+      "milliseconds": 169.034666
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 8,
+      "milliseconds": 198.551833
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pmr",
+      "sample": 8,
+      "milliseconds": 162.022459
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pmr",
+      "sample": 9,
+      "milliseconds": 146.214208
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 9,
+      "milliseconds": 205.775333
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 9,
+      "milliseconds": 174.26125
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 10,
+      "milliseconds": 175.505042
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 10,
+      "milliseconds": 208.135583
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pmr",
+      "sample": 10,
+      "milliseconds": 140.823667
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pmr",
+      "sample": 11,
+      "milliseconds": 135.854625
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 11,
+      "milliseconds": 204.4345
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 11,
+      "milliseconds": 164.7165
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 12,
+      "milliseconds": 193.00525
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 12,
+      "milliseconds": 216.445292
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pmr",
+      "sample": 12,
+      "milliseconds": 152.72275
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pmr",
+      "sample": 13,
+      "milliseconds": 145.398833
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 13,
+      "milliseconds": 205.273208
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 13,
+      "milliseconds": 223.602333
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 14,
+      "milliseconds": 169.050084
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 14,
+      "milliseconds": 195.401417
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pmr",
+      "sample": 14,
+      "milliseconds": 136.713708
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pmr",
+      "sample": 15,
+      "milliseconds": 145.686375
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 15,
+      "milliseconds": 199.461083
+    },
+    {
+      "metric": "start_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 15,
+      "milliseconds": 168.639917
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 1,
+      "milliseconds": 13.997208
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 1,
+      "milliseconds": 103.635709
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 1,
+      "milliseconds": 96.658708
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 2,
+      "milliseconds": 101.473208
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 2,
+      "milliseconds": 105.861458
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 2,
+      "milliseconds": 13.600208
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 3,
+      "milliseconds": 14.333166
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 3,
+      "milliseconds": 104.232917
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 3,
+      "milliseconds": 94.450833
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 4,
+      "milliseconds": 95.193
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 4,
+      "milliseconds": 102.7065
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 4,
+      "milliseconds": 13.835958
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 5,
+      "milliseconds": 14.460667
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 5,
+      "milliseconds": 105.708583
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 5,
+      "milliseconds": 97.291541
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 6,
+      "milliseconds": 97.654375
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 6,
+      "milliseconds": 102.614917
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 6,
+      "milliseconds": 13.593791
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 7,
+      "milliseconds": 22.138917
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 7,
+      "milliseconds": 104.013
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 7,
+      "milliseconds": 97.768583
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 8,
+      "milliseconds": 98.891666
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 8,
+      "milliseconds": 101.852959
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 8,
+      "milliseconds": 17.278959
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 9,
+      "milliseconds": 13.714917
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 9,
+      "milliseconds": 105.284834
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 9,
+      "milliseconds": 98.467166
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 10,
+      "milliseconds": 98.856708
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 10,
+      "milliseconds": 108.647083
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 10,
+      "milliseconds": 14.429041
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 11,
+      "milliseconds": 13.974333
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 11,
+      "milliseconds": 104.239208
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 11,
+      "milliseconds": 98.802041
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 12,
+      "milliseconds": 95.903958
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 12,
+      "milliseconds": 106.63775
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 12,
+      "milliseconds": 13.622667
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 13,
+      "milliseconds": 14.638625
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 13,
+      "milliseconds": 105.245167
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 13,
+      "milliseconds": 100.207
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 14,
+      "milliseconds": 97.000292
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 14,
+      "milliseconds": 105.733584
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 14,
+      "milliseconds": 14.199875
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 15,
+      "milliseconds": 13.29075
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 15,
+      "milliseconds": 107.258083
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 15,
+      "milliseconds": 95.63625
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 16,
+      "milliseconds": 95.286333
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 16,
+      "milliseconds": 103.485625
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 16,
+      "milliseconds": 13.73925
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 17,
+      "milliseconds": 13.970459
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 17,
+      "milliseconds": 106.336291
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 17,
+      "milliseconds": 97.38325
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 18,
+      "milliseconds": 98.687333
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 18,
+      "milliseconds": 104.6845
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 18,
+      "milliseconds": 14.479
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 19,
+      "milliseconds": 14.3975
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 19,
+      "milliseconds": 106.117792
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 19,
+      "milliseconds": 96.865083
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 20,
+      "milliseconds": 97.260791
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 20,
+      "milliseconds": 103.913417
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 20,
+      "milliseconds": 15.219583
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 21,
+      "milliseconds": 13.199709
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 21,
+      "milliseconds": 103.713166
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 21,
+      "milliseconds": 94.749916
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 22,
+      "milliseconds": 95.783084
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 22,
+      "milliseconds": 107.31025
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 22,
+      "milliseconds": 13.870833
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 23,
+      "milliseconds": 13.701125
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 23,
+      "milliseconds": 104.192041
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 23,
+      "milliseconds": 98.261459
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 24,
+      "milliseconds": 95.322458
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 24,
+      "milliseconds": 102.616167
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 24,
+      "milliseconds": 13.235333
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 25,
+      "milliseconds": 13.74825
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 25,
+      "milliseconds": 104.139792
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 25,
+      "milliseconds": 93.576792
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 26,
+      "milliseconds": 94.982209
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 26,
+      "milliseconds": 104.596667
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 26,
+      "milliseconds": 13.499
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 27,
+      "milliseconds": 13.512917
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 27,
+      "milliseconds": 101.690334
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 27,
+      "milliseconds": 96.6065
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 28,
+      "milliseconds": 95.878917
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 28,
+      "milliseconds": 105.384292
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 28,
+      "milliseconds": 14.3215
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 29,
+      "milliseconds": 14.052292
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 29,
+      "milliseconds": 105.328792
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 29,
+      "milliseconds": 98.827958
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 30,
+      "milliseconds": 96.30675
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 30,
+      "milliseconds": 104.646958
+    },
+    {
+      "metric": "list_one_cli",
+      "manager": "pmr",
+      "sample": 30,
+      "milliseconds": 14.290084
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pmr",
+      "sample": 1,
+      "milliseconds": 131.623458
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 1,
+      "milliseconds": 326.514208
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 1,
+      "milliseconds": 302.615958
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 2,
+      "milliseconds": 302.342375
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 2,
+      "milliseconds": 329.464083
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pmr",
+      "sample": 2,
+      "milliseconds": 121.149583
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pmr",
+      "sample": 3,
+      "milliseconds": 133.110292
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 3,
+      "milliseconds": 325.263708
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 3,
+      "milliseconds": 296.468167
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 4,
+      "milliseconds": 298.853042
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 4,
+      "milliseconds": 328.805542
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pmr",
+      "sample": 4,
+      "milliseconds": 132.304125
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pmr",
+      "sample": 5,
+      "milliseconds": 127.796833
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 5,
+      "milliseconds": 330.026292
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 5,
+      "milliseconds": 299.99475
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 6,
+      "milliseconds": 304.616125
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 6,
+      "milliseconds": 332.96525
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pmr",
+      "sample": 6,
+      "milliseconds": 133.872583
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pmr",
+      "sample": 7,
+      "milliseconds": 136.77975
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 7,
+      "milliseconds": 323.476625
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 7,
+      "milliseconds": 307.501833
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 8,
+      "milliseconds": 300.57875
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 8,
+      "milliseconds": 326.127417
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pmr",
+      "sample": 8,
+      "milliseconds": 136.415208
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pmr",
+      "sample": 9,
+      "milliseconds": 135.650542
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 9,
+      "milliseconds": 334.313166
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 9,
+      "milliseconds": 304.647792
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 10,
+      "milliseconds": 300.014333
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 10,
+      "milliseconds": 325.223542
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pmr",
+      "sample": 10,
+      "milliseconds": 130.557042
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pmr",
+      "sample": 11,
+      "milliseconds": 136.387542
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 11,
+      "milliseconds": 323.631333
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 11,
+      "milliseconds": 304.119041
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 12,
+      "milliseconds": 296.912833
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 12,
+      "milliseconds": 334.571875
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pmr",
+      "sample": 12,
+      "milliseconds": 147.025041
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pmr",
+      "sample": 13,
+      "milliseconds": 158.787667
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 13,
+      "milliseconds": 350.082458
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 13,
+      "milliseconds": 301.363292
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 14,
+      "milliseconds": 300.608541
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 14,
+      "milliseconds": 332.797042
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pmr",
+      "sample": 14,
+      "milliseconds": 136.414917
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pmr",
+      "sample": 15,
+      "milliseconds": 122.880667
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-6.0.14",
+      "sample": 15,
+      "milliseconds": 322.538333
+    },
+    {
+      "metric": "restart_to_http_ready",
+      "manager": "pm2-7.0.4",
+      "sample": 15,
+      "milliseconds": 300.358459
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 1,
+      "milliseconds": 15.640042
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 1,
+      "milliseconds": 106.688917
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 1,
+      "milliseconds": 99.296708
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 2,
+      "milliseconds": 99.819917
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 2,
+      "milliseconds": 105.732125
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 2,
+      "milliseconds": 14.751542
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 3,
+      "milliseconds": 14.808916
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 3,
+      "milliseconds": 110.82775
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 3,
+      "milliseconds": 101.744875
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 4,
+      "milliseconds": 97.185792
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 4,
+      "milliseconds": 105.470875
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 4,
+      "milliseconds": 14.507792
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 5,
+      "milliseconds": 15.51175
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 5,
+      "milliseconds": 106.424459
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 5,
+      "milliseconds": 105.181375
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 6,
+      "milliseconds": 99.274209
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 6,
+      "milliseconds": 107.467417
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 6,
+      "milliseconds": 14.661458
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 7,
+      "milliseconds": 14.655625
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 7,
+      "milliseconds": 106.819708
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 7,
+      "milliseconds": 99.480375
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 8,
+      "milliseconds": 99.123083
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 8,
+      "milliseconds": 110.364208
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 8,
+      "milliseconds": 15.459208
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 9,
+      "milliseconds": 14.476958
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 9,
+      "milliseconds": 107.546125
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 9,
+      "milliseconds": 103.88375
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 10,
+      "milliseconds": 103.071791
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 10,
+      "milliseconds": 109.30225
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 10,
+      "milliseconds": 14.997584
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 11,
+      "milliseconds": 15.827625
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 11,
+      "milliseconds": 108.344083
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 11,
+      "milliseconds": 99.676458
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 12,
+      "milliseconds": 102.373333
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 12,
+      "milliseconds": 109.781292
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 12,
+      "milliseconds": 14.708625
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 13,
+      "milliseconds": 14.696625
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 13,
+      "milliseconds": 111.575625
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 13,
+      "milliseconds": 100.615042
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 14,
+      "milliseconds": 99.979416
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 14,
+      "milliseconds": 108.25275
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 14,
+      "milliseconds": 14.622459
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 15,
+      "milliseconds": 14.061208
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 15,
+      "milliseconds": 105.923
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 15,
+      "milliseconds": 98.443583
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 16,
+      "milliseconds": 97.572958
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 16,
+      "milliseconds": 107.861542
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 16,
+      "milliseconds": 14.699542
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 17,
+      "milliseconds": 17.068375
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 17,
+      "milliseconds": 108.838959
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 17,
+      "milliseconds": 100.241333
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 18,
+      "milliseconds": 99.527708
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 18,
+      "milliseconds": 108.570459
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 18,
+      "milliseconds": 14.330625
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 19,
+      "milliseconds": 14.587666
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 19,
+      "milliseconds": 105.859417
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 19,
+      "milliseconds": 99.843292
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 20,
+      "milliseconds": 99.607333
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 20,
+      "milliseconds": 107.579958
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 20,
+      "milliseconds": 15.134584
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 21,
+      "milliseconds": 14.676792
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 21,
+      "milliseconds": 107.061542
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 21,
+      "milliseconds": 99.179209
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 22,
+      "milliseconds": 100.203375
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 22,
+      "milliseconds": 106.566625
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 22,
+      "milliseconds": 14.956625
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 23,
+      "milliseconds": 16.751084
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 23,
+      "milliseconds": 109.93225
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 23,
+      "milliseconds": 100.238291
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 24,
+      "milliseconds": 98.45225
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 24,
+      "milliseconds": 106.439791
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 24,
+      "milliseconds": 15.189375
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 25,
+      "milliseconds": 14.299875
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 25,
+      "milliseconds": 109.324209
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 25,
+      "milliseconds": 102.130292
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 26,
+      "milliseconds": 104.344125
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 26,
+      "milliseconds": 109.525083
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 26,
+      "milliseconds": 14.511834
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 27,
+      "milliseconds": 14.960625
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 27,
+      "milliseconds": 108.579834
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 27,
+      "milliseconds": 102.999333
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 28,
+      "milliseconds": 101.753125
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 28,
+      "milliseconds": 108.689875
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 28,
+      "milliseconds": 14.769625
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 29,
+      "milliseconds": 14.530917
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 29,
+      "milliseconds": 110.987667
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 29,
+      "milliseconds": 107.083417
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-7.0.4",
+      "sample": 30,
+      "milliseconds": 100.58725
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pm2-6.0.14",
+      "sample": 30,
+      "milliseconds": 106.065417
+    },
+    {
+      "metric": "list_ten_cli",
+      "manager": "pmr",
+      "sample": 30,
+      "milliseconds": 14.257416
+    }
+  ],
+  "http_samples": [
+    {
+      "manager": "node-direct",
+      "sample": 1,
+      "result": {
+        "url": "http://127.0.0.1:17890/",
+        "connections": 20,
+        "sampleInt": 1000,
+        "pipelining": 1,
+        "workers": 0,
+        "duration": 5.01,
+        "samples": 5,
+        "start": "2026-10-15T20:30:01.196Z",
+        "finish": "2026-10-15T20:30:06.201Z",
+        "errors": 0,
+        "timeouts": 0,
+        "mismatches": 0,
+        "non2xx": 0,
+        "resets": 0,
+        "1xx": 0,
+        "2xx": 281126,
+        "3xx": 0,
+        "4xx": 0,
+        "5xx": 0,
+        "statusCodeStats": {
+          "200": {
+            "count": 281126
+          }
+        },
+        "latency": {
+          "average": 0.01,
+          "mean": 0.01,
+          "stddev": 0.05,
+          "min": 1,
+          "max": 4,
+          "p0_001": 0,
+          "p0_01": 0,
+          "p0_1": 0,
+          "p1": 0,
+          "p2_5": 0,
+          "p10": 0,
+          "p25": 0,
+          "p50": 0,
+          "p75": 0,
+          "p90": 0,
+          "p97_5": 0,
+          "p99": 0,
+          "p99_9": 1,
+          "p99_99": 1,
+          "p99_999": 4,
+          "totalCount": 281126
+        },
+        "requests": {
+          "average": 56227.2,
+          "mean": 56227.2,
+          "stddev": 459.56,
+          "min": 55766,
+          "max": 57051,
+          "total": 281126,
+          "p0_001": 55775,
+          "p0_01": 55775,
+          "p0_1": 55775,
+          "p1": 55775,
+          "p2_5": 55775,
+          "p10": 55775,
+          "p25": 55839,
+          "p50": 56191,
+          "p75": 56351,
+          "p90": 57055,
+          "p97_5": 57055,
+          "p99": 57055,
+          "p99_9": 57055,
+          "p99_99": 57055,
+          "p99_999": 57055,
+          "sent": 281146
+        },
+        "throughput": {
+          "average": 9390489.6,
+          "mean": 9390489.6,
+          "stddev": 79828.93,
+          "min": 9312922,
+          "max": 9527517,
+          "total": 46948042,
+          "p0_001": 9314303,
+          "p0_01": 9314303,
+          "p0_1": 9314303,
+          "p1": 9314303,
+          "p2_5": 9314303,
+          "p10": 9314303,
+          "p25": 9322495,
+          "p50": 9388031,
+          "p75": 9412607,
+          "p90": 9535487,
+          "p97_5": 9535487,
+          "p99": 9535487,
+          "p99_9": 9535487,
+          "p99_99": 9535487,
+          "p99_999": 9535487
+        }
+      }
+    },
+    {
+      "manager": "pmr",
+      "sample": 1,
+      "result": {
+        "url": "http://127.0.0.1:17880/",
+        "connections": 20,
+        "sampleInt": 1000,
+        "pipelining": 1,
+        "workers": 0,
+        "duration": 5.01,
+        "samples": 5,
+        "start": "2026-10-15T20:30:06.313Z",
+        "finish": "2026-10-15T20:30:11.320Z",
+        "errors": 0,
+        "timeouts": 0,
+        "mismatches": 0,
+        "non2xx": 0,
+        "resets": 0,
+        "1xx": 0,
+        "2xx": 281573,
+        "3xx": 0,
+        "4xx": 0,
+        "5xx": 0,
+        "statusCodeStats": {
+          "200": {
+            "count": 281573
+          }
+        },
+        "latency": {
+          "average": 0.01,
+          "mean": 0.01,
+          "stddev": 0.05,
+          "min": 1,
+          "max": 4,
+          "p0_001": 0,
+          "p0_01": 0,
+          "p0_1": 0,
+          "p1": 0,
+          "p2_5": 0,
+          "p10": 0,
+          "p25": 0,
+          "p50": 0,
+          "p75": 0,
+          "p90": 0,
+          "p97_5": 0,
+          "p99": 0,
+          "p99_9": 1,
+          "p99_99": 2,
+          "p99_999": 4,
+          "totalCount": 281573
+        },
+        "requests": {
+          "average": 56323.2,
+          "mean": 56323.2,
+          "stddev": 596.13,
+          "min": 55337,
+          "max": 57059,
+          "total": 281573,
+          "p0_001": 55359,
+          "p0_01": 55359,
+          "p0_1": 55359,
+          "p1": 55359,
+          "p2_5": 55359,
+          "p10": 55359,
+          "p25": 56127,
+          "p50": 56319,
+          "p75": 56799,
+          "p90": 57087,
+          "p97_5": 57087,
+          "p99": 57087,
+          "p99_9": 57087,
+          "p99_99": 57087,
+          "p99_999": 57087,
+          "sent": 281593
+        },
+        "throughput": {
+          "average": 9405235.2,
+          "mean": 9405235.2,
+          "stddev": 99065.64,
+          "min": 9241279,
+          "max": 9528853,
+          "total": 47022691,
+          "p0_001": 9248767,
+          "p0_01": 9248767,
+          "p0_1": 9248767,
+          "p1": 9248767,
+          "p2_5": 9248767,
+          "p10": 9248767,
+          "p25": 9371647,
+          "p50": 9404415,
+          "p75": 9486335,
+          "p90": 9535487,
+          "p97_5": 9535487,
+          "p99": 9535487,
+          "p99_9": 9535487,
+          "p99_99": 9535487,
+          "p99_999": 9535487
+        }
+      }
+    },
+    {
+      "manager": "pm2-6.0.14",
+      "sample": 1,
+      "result": {
+        "url": "http://127.0.0.1:17881/",
+        "connections": 20,
+        "sampleInt": 1000,
+        "pipelining": 1,
+        "workers": 0,
+        "duration": 5.01,
+        "samples": 5,
+        "start": "2026-10-15T20:30:11.438Z",
+        "finish": "2026-10-15T20:30:16.443Z",
+        "errors": 0,
+        "timeouts": 0,
+        "mismatches": 0,
+        "non2xx": 0,
+        "resets": 0,
+        "1xx": 0,
+        "2xx": 211108,
+        "3xx": 0,
+        "4xx": 0,
+        "5xx": 0,
+        "statusCodeStats": {
+          "200": {
+            "count": 211108
+          }
+        },
+        "latency": {
+          "average": 0.02,
+          "mean": 0.02,
+          "stddev": 0.18,
+          "min": 1,
+          "max": 7,
+          "p0_001": 0,
+          "p0_01": 0,
+          "p0_1": 0,
+          "p1": 0,
+          "p2_5": 0,
+          "p10": 0,
+          "p25": 0,
+          "p50": 0,
+          "p75": 0,
+          "p90": 0,
+          "p97_5": 0,
+          "p99": 1,
+          "p99_9": 2,
+          "p99_99": 6,
+          "p99_999": 7,
+          "totalCount": 211108
+        },
+        "requests": {
+          "average": 42224,
+          "mean": 42224,
+          "stddev": 3412.11,
+          "min": 35461,
+          "max": 44572,
+          "total": 211108,
+          "p0_001": 35487,
+          "p0_01": 35487,
+          "p0_1": 35487,
+          "p1": 35487,
+          "p2_5": 35487,
+          "p10": 35487,
+          "p25": 43071,
+          "p50": 43871,
+          "p75": 44191,
+          "p90": 44575,
+          "p97_5": 44575,
+          "p99": 44575,
+          "p99_9": 44575,
+          "p99_99": 44575,
+          "p99_999": 44575,
+          "sent": 211128
+        },
+        "throughput": {
+          "average": 7050444.8,
+          "mean": 7050444.8,
+          "stddev": 571202.74,
+          "min": 5921987,
+          "max": 7443524,
+          "total": 35255036,
+          "p0_001": 5922815,
+          "p0_01": 5922815,
+          "p0_1": 5922815,
+          "p1": 5922815,
+          "p2_5": 5922815,
+          "p10": 5922815,
+          "p25": 7188479,
+          "p50": 7323647,
+          "p75": 7380991,
+          "p90": 7446527,
+          "p97_5": 7446527,
+          "p99": 7446527,
+          "p99_9": 7446527,
+          "p99_99": 7446527,
+          "p99_999": 7446527
+        }
+      }
+    },
+    {
+      "manager": "pm2-7.0.4",
+      "sample": 1,
+      "result": {
+        "url": "http://127.0.0.1:17882/",
+        "connections": 20,
+        "sampleInt": 1000,
+        "pipelining": 1,
+        "workers": 0,
+        "duration": 5.01,
+        "samples": 5,
+        "start": "2026-10-15T20:30:16.559Z",
+        "finish": "2026-10-15T20:30:21.565Z",
+        "errors": 0,
+        "timeouts": 0,
+        "mismatches": 0,
+        "non2xx": 0,
+        "resets": 0,
+        "1xx": 0,
+        "2xx": 217590,
+        "3xx": 0,
+        "4xx": 0,
+        "5xx": 0,
+        "statusCodeStats": {
+          "200": {
+            "count": 217590
+          }
+        },
+        "latency": {
+          "average": 0.01,
+          "mean": 0.01,
+          "stddev": 0.07,
+          "min": 1,
+          "max": 4,
+          "p0_001": 0,
+          "p0_01": 0,
+          "p0_1": 0,
+          "p1": 0,
+          "p2_5": 0,
+          "p10": 0,
+          "p25": 0,
+          "p50": 0,
+          "p75": 0,
+          "p90": 0,
+          "p97_5": 0,
+          "p99": 0,
+          "p99_9": 1,
+          "p99_99": 2,
+          "p99_999": 4,
+          "totalCount": 217590
+        },
+        "requests": {
+          "average": 43523.2,
+          "mean": 43523.2,
+          "stddev": 780.86,
+          "min": 42056,
+          "max": 44194,
+          "total": 217590,
+          "p0_001": 42079,
+          "p0_01": 42079,
+          "p0_1": 42079,
+          "p1": 42079,
+          "p2_5": 42079,
+          "p10": 42079,
+          "p25": 43423,
+          "p50": 43839,
+          "p75": 44127,
+          "p90": 44223,
+          "p97_5": 44223,
+          "p99": 44223,
+          "p99_9": 44223,
+          "p99_99": 44223,
+          "p99_999": 44223,
+          "sent": 217610
+        },
+        "throughput": {
+          "average": 7266713.6,
+          "mean": 7266713.6,
+          "stddev": 129749.49,
+          "min": 7023352,
+          "max": 7380398,
+          "total": 36337530,
+          "p0_001": 7024639,
+          "p0_01": 7024639,
+          "p0_1": 7024639,
+          "p1": 7024639,
+          "p2_5": 7024639,
+          "p10": 7024639,
+          "p25": 7254015,
+          "p50": 7319551,
+          "p75": 7364607,
+          "p90": 7380991,
+          "p97_5": 7380991,
+          "p99": 7380991,
+          "p99_9": 7380991,
+          "p99_99": 7380991,
+          "p99_999": 7380991
+        }
+      }
+    },
+    {
+      "manager": "pm2-7.0.4",
+      "sample": 2,
+      "result": {
+        "url": "http://127.0.0.1:17882/",
+        "connections": 20,
+        "sampleInt": 1000,
+        "pipelining": 1,
+        "workers": 0,
+        "duration": 5.01,
+        "samples": 5,
+        "start": "2026-10-15T20:30:21.681Z",
+        "finish": "2026-10-15T20:30:26.686Z",
+        "errors": 0,
+        "timeouts": 0,
+        "mismatches": 0,
+        "non2xx": 0,
+        "resets": 0,
+        "1xx": 0,
+        "2xx": 216482,
+        "3xx": 0,
+        "4xx": 0,
+        "5xx": 0,
+        "statusCodeStats": {
+          "200": {
+            "count": 216482
+          }
+        },
+        "latency": {
+          "average": 0.01,
+          "mean": 0.01,
+          "stddev": 0.08,
+          "min": 1,
+          "max": 4,
+          "p0_001": 0,
+          "p0_01": 0,
+          "p0_1": 0,
+          "p1": 0,
+          "p2_5": 0,
+          "p10": 0,
+          "p25": 0,
+          "p50": 0,
+          "p75": 0,
+          "p90": 0,
+          "p97_5": 0,
+          "p99": 0,
+          "p99_9": 1,
+          "p99_99": 2,
+          "p99_999": 4,
+          "totalCount": 216482
+        },
+        "requests": {
+          "average": 43299.2,
+          "mean": 43299.2,
+          "stddev": 625.96,
+          "min": 42163,
+          "max": 43938,
+          "total": 216482,
+          "p0_001": 42175,
+          "p0_01": 42175,
+          "p0_1": 42175,
+          "p1": 42175,
+          "p2_5": 42175,
+          "p10": 42175,
+          "p25": 43167,
+          "p50": 43551,
+          "p75": 43711,
+          "p90": 43967,
+          "p97_5": 43967,
+          "p99": 43967,
+          "p99_9": 43967,
+          "p99_99": 43967,
+          "p99_999": 43967,
+          "sent": 216502
+        },
+        "throughput": {
+          "average": 7230668.8,
+          "mean": 7230668.8,
+          "stddev": 103050.03,
+          "min": 7041221,
+          "max": 7337646,
+          "total": 36152494,
+          "p0_001": 7045119,
+          "p0_01": 7045119,
+          "p0_1": 7045119,
+          "p1": 7045119,
+          "p2_5": 7045119,
+          "p10": 7045119,
+          "p25": 7208959,
+          "p50": 7270399,
+          "p75": 7299071,
+          "p90": 7340031,
+          "p97_5": 7340031,
+          "p99": 7340031,
+          "p99_9": 7340031,
+          "p99_99": 7340031,
+          "p99_999": 7340031
+        }
+      }
+    },
+    {
+      "manager": "pm2-6.0.14",
+      "sample": 2,
+      "result": {
+        "url": "http://127.0.0.1:17881/",
+        "connections": 20,
+        "sampleInt": 1000,
+        "pipelining": 1,
+        "workers": 0,
+        "duration": 5.01,
+        "samples": 5,
+        "start": "2026-10-15T20:30:26.796Z",
+        "finish": "2026-10-15T20:30:31.801Z",
+        "errors": 0,
+        "timeouts": 0,
+        "mismatches": 0,
+        "non2xx": 0,
+        "resets": 0,
+        "1xx": 0,
+        "2xx": 214924,
+        "3xx": 0,
+        "4xx": 0,
+        "5xx": 0,
+        "statusCodeStats": {
+          "200": {
+            "count": 214924
+          }
+        },
+        "latency": {
+          "average": 0.01,
+          "mean": 0.01,
+          "stddev": 0.1,
+          "min": 1,
+          "max": 4,
+          "p0_001": 0,
+          "p0_01": 0,
+          "p0_1": 0,
+          "p1": 0,
+          "p2_5": 0,
+          "p10": 0,
+          "p25": 0,
+          "p50": 0,
+          "p75": 0,
+          "p90": 0,
+          "p97_5": 0,
+          "p99": 0,
+          "p99_9": 1,
+          "p99_99": 3,
+          "p99_999": 4,
+          "totalCount": 214924
+        },
+        "requests": {
+          "average": 42985.6,
+          "mean": 42985.6,
+          "stddev": 668.31,
+          "min": 41781,
+          "max": 43670,
+          "total": 214924,
+          "p0_001": 41791,
+          "p0_01": 41791,
+          "p0_1": 41791,
+          "p1": 41791,
+          "p2_5": 41791,
+          "p10": 41791,
+          "p25": 42815,
+          "p50": 43263,
+          "p75": 43455,
+          "p90": 43679,
+          "p97_5": 43679,
+          "p99": 43679,
+          "p99_9": 43679,
+          "p99_99": 43679,
+          "p99_999": 43679,
+          "sent": 214944
+        },
+        "throughput": {
+          "average": 7178240,
+          "mean": 7178240,
+          "stddev": 110789.04,
+          "min": 6977427,
+          "max": 7292890,
+          "total": 35892308,
+          "p0_001": 6979583,
+          "p0_01": 6979583,
+          "p0_1": 6979583,
+          "p1": 6979583,
+          "p2_5": 6979583,
+          "p10": 6979583,
+          "p25": 7151615,
+          "p50": 7221247,
+          "p75": 7254015,
+          "p90": 7294975,
+          "p97_5": 7294975,
+          "p99": 7294975,
+          "p99_9": 7294975,
+          "p99_99": 7294975,
+          "p99_999": 7294975
+        }
+      }
+    },
+    {
+      "manager": "pmr",
+      "sample": 2,
+      "result": {
+        "url": "http://127.0.0.1:17880/",
+        "connections": 20,
+        "sampleInt": 1000,
+        "pipelining": 1,
+        "workers": 0,
+        "duration": 5.01,
+        "samples": 5,
+        "start": "2026-10-15T20:30:31.916Z",
+        "finish": "2026-10-15T20:30:36.921Z",
+        "errors": 0,
+        "timeouts": 0,
+        "mismatches": 0,
+        "non2xx": 0,
+        "resets": 0,
+        "1xx": 0,
+        "2xx": 287965,
+        "3xx": 0,
+        "4xx": 0,
+        "5xx": 0,
+        "statusCodeStats": {
+          "200": {
+            "count": 287965
+          }
+        },
+        "latency": {
+          "average": 0.01,
+          "mean": 0.01,
+          "stddev": 0.05,
+          "min": 1,
+          "max": 4,
+          "p0_001": 0,
+          "p0_01": 0,
+          "p0_1": 0,
+          "p1": 0,
+          "p2_5": 0,
+          "p10": 0,
+          "p25": 0,
+          "p50": 0,
+          "p75": 0,
+          "p90": 0,
+          "p97_5": 0,
+          "p99": 0,
+          "p99_9": 0,
+          "p99_99": 2,
+          "p99_999": 4,
+          "totalCount": 287965
+        },
+        "requests": {
+          "average": 57590.4,
+          "mean": 57590.4,
+          "stddev": 322.17,
+          "min": 57304,
+          "max": 57994,
+          "total": 287965,
+          "p0_001": 57311,
+          "p0_01": 57311,
+          "p0_1": 57311,
+          "p1": 57311,
+          "p2_5": 57311,
+          "p10": 57311,
+          "p25": 57343,
+          "p50": 57375,
+          "p75": 57983,
+          "p90": 58015,
+          "p97_5": 58015,
+          "p99": 58015,
+          "p99_9": 58015,
+          "p99_99": 58015,
+          "p99_999": 58015,
+          "sent": 287985
+        },
+        "throughput": {
+          "average": 9618227.2,
+          "mean": 9618227.2,
+          "stddev": 52989.01,
+          "min": 9569768,
+          "max": 9684998,
+          "total": 48090155,
+          "p0_001": 9576447,
+          "p0_01": 9576447,
+          "p0_1": 9576447,
+          "p1": 9576447,
+          "p2_5": 9576447,
+          "p10": 9576447,
+          "p25": 9576447,
+          "p50": 9584639,
+          "p75": 9682943,
+          "p90": 9691135,
+          "p97_5": 9691135,
+          "p99": 9691135,
+          "p99_9": 9691135,
+          "p99_99": 9691135,
+          "p99_999": 9691135
+        }
+      }
+    },
+    {
+      "manager": "node-direct",
+      "sample": 2,
+      "result": {
+        "url": "http://127.0.0.1:17890/",
+        "connections": 20,
+        "sampleInt": 1000,
+        "pipelining": 1,
+        "workers": 0,
+        "duration": 5.01,
+        "samples": 5,
+        "start": "2026-10-15T20:30:37.033Z",
+        "finish": "2026-10-15T20:30:42.038Z",
+        "errors": 0,
+        "timeouts": 0,
+        "mismatches": 0,
+        "non2xx": 0,
+        "resets": 0,
+        "1xx": 0,
+        "2xx": 284243,
+        "3xx": 0,
+        "4xx": 0,
+        "5xx": 0,
+        "statusCodeStats": {
+          "200": {
+            "count": 284243
+          }
+        },
+        "latency": {
+          "average": 0.01,
+          "mean": 0.01,
+          "stddev": 0.05,
+          "min": 1,
+          "max": 4,
+          "p0_001": 0,
+          "p0_01": 0,
+          "p0_1": 0,
+          "p1": 0,
+          "p2_5": 0,
+          "p10": 0,
+          "p25": 0,
+          "p50": 0,
+          "p75": 0,
+          "p90": 0,
+          "p97_5": 0,
+          "p99": 0,
+          "p99_9": 0,
+          "p99_99": 2,
+          "p99_999": 4,
+          "totalCount": 284243
+        },
+        "requests": {
+          "average": 56841.6,
+          "mean": 56841.6,
+          "stddev": 1159.69,
+          "min": 54748,
+          "max": 58299,
+          "total": 284243,
+          "p0_001": 54751,
+          "p0_01": 54751,
+          "p0_1": 54751,
+          "p1": 54751,
+          "p2_5": 54751,
+          "p10": 54751,
+          "p25": 56895,
+          "p50": 57119,
+          "p75": 57215,
+          "p90": 58303,
+          "p97_5": 58303,
+          "p99": 58303,
+          "p99_9": 58303,
+          "p99_99": 58303,
+          "p99_999": 58303,
+          "sent": 284263
+        },
+        "throughput": {
+          "average": 9495347.2,
+          "mean": 9495347.2,
+          "stddev": 192579.97,
+          "min": 9142916,
+          "max": 9735933,
+          "total": 47468581,
+          "p0_001": 9150463,
+          "p0_01": 9150463,
+          "p0_1": 9150463,
+          "p1": 9150463,
+          "p2_5": 9150463,
+          "p10": 9150463,
+          "p25": 9502719,
+          "p50": 9543679,
+          "p75": 9560063,
+          "p90": 9740287,
+          "p97_5": 9740287,
+          "p99": 9740287,
+          "p99_9": 9740287,
+          "p99_99": 9740287,
+          "p99_999": 9740287
+        }
+      }
+    },
+    {
+      "manager": "node-direct",
+      "sample": 3,
+      "result": {
+        "url": "http://127.0.0.1:17890/",
+        "connections": 20,
+        "sampleInt": 1000,
+        "pipelining": 1,
+        "workers": 0,
+        "duration": 5.01,
+        "samples": 5,
+        "start": "2026-10-15T20:30:42.153Z",
+        "finish": "2026-10-15T20:30:47.159Z",
+        "errors": 0,
+        "timeouts": 0,
+        "mismatches": 0,
+        "non2xx": 0,
+        "resets": 0,
+        "1xx": 0,
+        "2xx": 283117,
+        "3xx": 0,
+        "4xx": 0,
+        "5xx": 0,
+        "statusCodeStats": {
+          "200": {
+            "count": 283117
+          }
+        },
+        "latency": {
+          "average": 0.01,
+          "mean": 0.01,
+          "stddev": 0.06,
+          "min": 1,
+          "max": 4,
+          "p0_001": 0,
+          "p0_01": 0,
+          "p0_1": 0,
+          "p1": 0,
+          "p2_5": 0,
+          "p10": 0,
+          "p25": 0,
+          "p50": 0,
+          "p75": 0,
+          "p90": 0,
+          "p97_5": 0,
+          "p99": 0,
+          "p99_9": 1,
+          "p99_99": 2,
+          "p99_999": 4,
+          "totalCount": 283117
+        },
+        "requests": {
+          "average": 56624,
+          "mean": 56624,
+          "stddev": 1211.45,
+          "min": 54743,
+          "max": 58366,
+          "total": 283117,
+          "p0_001": 54751,
+          "p0_01": 54751,
+          "p0_1": 54751,
+          "p1": 54751,
+          "p2_5": 54751,
+          "p10": 54751,
+          "p25": 56255,
+          "p50": 56415,
+          "p75": 57407,
+          "p90": 58367,
+          "p97_5": 58367,
+          "p99": 58367,
+          "p99_9": 58367,
+          "p99_99": 58367,
+          "p99_999": 58367,
+          "sent": 283137
+        },
+        "throughput": {
+          "average": 9454387.2,
+          "mean": 9454387.2,
+          "stddev": 202632.4,
+          "min": 9142081,
+          "max": 9747122,
+          "total": 47280539,
+          "p0_001": 9142271,
+          "p0_01": 9142271,
+          "p0_1": 9142271,
+          "p1": 9142271,
+          "p2_5": 9142271,
+          "p10": 9142271,
+          "p25": 9396223,
+          "p50": 9420799,
+          "p75": 9584639,
+          "p90": 9748479,
+          "p97_5": 9748479,
+          "p99": 9748479,
+          "p99_9": 9748479,
+          "p99_99": 9748479,
+          "p99_999": 9748479
+        }
+      }
+    },
+    {
+      "manager": "pmr",
+      "sample": 3,
+      "result": {
+        "url": "http://127.0.0.1:17880/",
+        "connections": 20,
+        "sampleInt": 1000,
+        "pipelining": 1,
+        "workers": 0,
+        "duration": 5.01,
+        "samples": 5,
+        "start": "2026-10-15T20:30:47.276Z",
+        "finish": "2026-10-15T20:30:52.283Z",
+        "errors": 0,
+        "timeouts": 0,
+        "mismatches": 0,
+        "non2xx": 0,
+        "resets": 0,
+        "1xx": 0,
+        "2xx": 238897,
+        "3xx": 0,
+        "4xx": 0,
+        "5xx": 0,
+        "statusCodeStats": {
+          "200": {
+            "count": 238897
+          }
+        },
+        "latency": {
+          "average": 0.03,
+          "mean": 0.03,
+          "stddev": 0.61,
+          "min": 1,
+          "max": 41,
+          "p0_001": 0,
+          "p0_01": 0,
+          "p0_1": 0,
+          "p1": 0,
+          "p2_5": 0,
+          "p10": 0,
+          "p25": 0,
+          "p50": 0,
+          "p75": 0,
+          "p90": 0,
+          "p97_5": 0,
+          "p99": 1,
+          "p99_9": 6,
+          "p99_99": 24,
+          "p99_999": 38,
+          "totalCount": 238897
+        },
+        "requests": {
+          "average": 47779.2,
+          "mean": 47779.2,
+          "stddev": 5254.97,
+          "min": 38223,
+          "max": 52758,
+          "total": 238897,
+          "p0_001": 38239,
+          "p0_01": 38239,
+          "p0_1": 38239,
+          "p1": 38239,
+          "p2_5": 38239,
+          "p10": 38239,
+          "p25": 46399,
+          "p50": 49727,
+          "p75": 51839,
+          "p90": 52767,
+          "p97_5": 52767,
+          "p99": 52767,
+          "p99_9": 52767,
+          "p99_99": 52767,
+          "p99_999": 52767,
+          "sent": 238917
+        },
+        "throughput": {
+          "average": 7978598.4,
+          "mean": 7978598.4,
+          "stddev": 877754.17,
+          "min": 6383241,
+          "max": 8810586,
+          "total": 39895799,
+          "p0_001": 6385663,
+          "p0_01": 6385663,
+          "p0_1": 6385663,
+          "p1": 6385663,
+          "p2_5": 6385663,
+          "p10": 6385663,
+          "p25": 7745535,
+          "p50": 8302591,
+          "p75": 8658943,
+          "p90": 8814591,
+          "p97_5": 8814591,
+          "p99": 8814591,
+          "p99_9": 8814591,
+          "p99_99": 8814591,
+          "p99_999": 8814591
+        }
+      }
+    },
+    {
+      "manager": "pm2-6.0.14",
+      "sample": 3,
+      "result": {
+        "url": "http://127.0.0.1:17881/",
+        "connections": 20,
+        "sampleInt": 1000,
+        "pipelining": 1,
+        "workers": 0,
+        "duration": 5.01,
+        "samples": 5,
+        "start": "2026-10-15T20:30:52.423Z",
+        "finish": "2026-10-15T20:30:57.430Z",
+        "errors": 0,
+        "timeouts": 0,
+        "mismatches": 0,
+        "non2xx": 0,
+        "resets": 0,
+        "1xx": 0,
+        "2xx": 207666,
+        "3xx": 0,
+        "4xx": 0,
+        "5xx": 0,
+        "statusCodeStats": {
+          "200": {
+            "count": 207666
+          }
+        },
+        "latency": {
+          "average": 0.02,
+          "mean": 0.02,
+          "stddev": 0.12,
+          "min": 1,
+          "max": 5,
+          "p0_001": 0,
+          "p0_01": 0,
+          "p0_1": 0,
+          "p1": 0,
+          "p2_5": 0,
+          "p10": 0,
+          "p25": 0,
+          "p50": 0,
+          "p75": 0,
+          "p90": 0,
+          "p97_5": 0,
+          "p99": 1,
+          "p99_9": 1,
+          "p99_99": 3,
+          "p99_999": 5,
+          "totalCount": 207666
+        },
+        "requests": {
+          "average": 41539.2,
+          "mean": 41539.2,
+          "stddev": 676.29,
+          "min": 40202,
+          "max": 41993,
+          "total": 207666,
+          "p0_001": 40223,
+          "p0_01": 40223,
+          "p0_1": 40223,
+          "p1": 40223,
+          "p2_5": 40223,
+          "p10": 40223,
+          "p25": 41663,
+          "p50": 41919,
+          "p75": 41951,
+          "p90": 42015,
+          "p97_5": 42015,
+          "p99": 42015,
+          "p99_9": 42015,
+          "p99_99": 42015,
+          "p99_999": 42015,
+          "sent": 207686
+        },
+        "throughput": {
+          "average": 6937395.2,
+          "mean": 6937395.2,
+          "stddev": 112663.09,
+          "min": 6713734,
+          "max": 7012831,
+          "total": 34680222,
+          "p0_001": 6717439,
+          "p0_01": 6717439,
+          "p0_1": 6717439,
+          "p1": 6717439,
+          "p2_5": 6717439,
+          "p10": 6717439,
+          "p25": 6959103,
+          "p50": 7000063,
+          "p75": 7004159,
+          "p90": 7016447,
+          "p97_5": 7016447,
+          "p99": 7016447,
+          "p99_9": 7016447,
+          "p99_99": 7016447,
+          "p99_999": 7016447
+        }
+      }
+    },
+    {
+      "manager": "pm2-7.0.4",
+      "sample": 3,
+      "result": {
+        "url": "http://127.0.0.1:17882/",
+        "connections": 20,
+        "sampleInt": 1000,
+        "pipelining": 1,
+        "workers": 0,
+        "duration": 5.01,
+        "samples": 5,
+        "start": "2026-10-15T20:30:57.552Z",
+        "finish": "2026-10-15T20:31:02.558Z",
+        "errors": 0,
+        "timeouts": 0,
+        "mismatches": 0,
+        "non2xx": 0,
+        "resets": 0,
+        "1xx": 0,
+        "2xx": 193608,
+        "3xx": 0,
+        "4xx": 0,
+        "5xx": 0,
+        "statusCodeStats": {
+          "200": {
+            "count": 193608
+          }
+        },
+        "latency": {
+          "average": 0.03,
+          "mean": 0.03,
+          "stddev": 0.2,
+          "min": 1,
+          "max": 6,
+          "p0_001": 0,
+          "p0_01": 0,
+          "p0_1": 0,
+          "p1": 0,
+          "p2_5": 0,
+          "p10": 0,
+          "p25": 0,
+          "p50": 0,
+          "p75": 0,
+          "p90": 0,
+          "p97_5": 1,
+          "p99": 1,
+          "p99_9": 2,
+          "p99_99": 4,
+          "p99_999": 6,
+          "totalCount": 193608
+        },
+        "requests": {
+          "average": 38723.2,
+          "mean": 38723.2,
+          "stddev": 2068.07,
+          "min": 34630,
+          "max": 40081,
+          "total": 193608,
+          "p0_001": 34655,
+          "p0_01": 34655,
+          "p0_1": 34655,
+          "p1": 34655,
+          "p2_5": 34655,
+          "p10": 34655,
+          "p25": 39135,
+          "p50": 39903,
+          "p75": 39903,
+          "p90": 40095,
+          "p97_5": 40095,
+          "p99": 40095,
+          "p99_9": 40095,
+          "p99_99": 40095,
+          "p99_999": 40095,
+          "sent": 193628
+        },
+        "throughput": {
+          "average": 6466355.2,
+          "mean": 6466355.2,
+          "stddev": 347019.93,
+          "min": 5783210,
+          "max": 6693527,
+          "total": 32332536,
+          "p0_001": 5783551,
+          "p0_01": 5783551,
+          "p0_1": 5783551,
+          "p1": 5783551,
+          "p2_5": 5783551,
+          "p10": 5783551,
+          "p25": 6533119,
+          "p50": 6664191,
+          "p75": 6664191,
+          "p90": 6696959,
+          "p97_5": 6696959,
+          "p99": 6696959,
+          "p99_9": 6696959,
+          "p99_99": 6696959,
+          "p99_999": 6696959
+        }
+      }
+    }
+  ]
+}

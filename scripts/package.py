@@ -17,7 +17,18 @@ args = parser.parse_args()
 version = json.loads(subprocess.check_output(['cargo', 'metadata', '--locked', '--no-deps', '--format-version', '1'], cwd=root))['packages'][0]['version']
 if args.tag != 'v' + version:
     parser.error('tag must match the Cargo package version')
-metadata = json.loads(subprocess.check_output(['cargo', 'metadata', '--locked', '--format-version', '1'], cwd=root))
+metadata = json.loads(subprocess.check_output(['cargo', 'metadata', '--locked', '--format-version', '1', '--filter-platform', args.target], cwd=root))
+nodes = {node['id']: node for node in metadata['resolve']['nodes']}
+reachable = set()
+pending = [metadata['resolve']['root']]
+while pending:
+    package_id = pending.pop()
+    if package_id in reachable:
+        continue
+    reachable.add(package_id)
+    for dependency in nodes[package_id]['deps']:
+        if any(kind['kind'] != 'dev' for kind in dependency['dep_kinds']):
+            pending.append(dependency['pkg'])
 dist = root / 'dist'
 dist.mkdir(exist_ok=True)
 with tempfile.TemporaryDirectory(prefix='pmr-package-') as tmp:
@@ -30,11 +41,11 @@ with tempfile.TemporaryDirectory(prefix='pmr-package-') as tmp:
     notices.mkdir()
     inventory = []
     for package in sorted(metadata['packages'], key=lambda p: (p['name'], p['version'])):
-        if package['source'] is None:
+        if package['source'] is None or package['id'] not in reachable:
             continue
         directory = pathlib.Path(package['manifest_path']).parent
         candidates = set()
-        for pattern in ['LICENSE*', 'LICENCE*', 'COPYING*', 'NOTICE*', 'license*', 'licence*', 'licenses/*']:
+        for pattern in ['LICENSE*', 'LICENCE*', 'COPYING*', 'NOTICE*', 'license*', 'licence*', 'licenses/*', 'AUTHORS*', 'COPYRIGHT*']:
             candidates.update(p for p in directory.glob(pattern) if p.is_file())
         if package.get('license_file'):
             candidates.add(directory / package['license_file'])

@@ -1,12 +1,14 @@
 # pmr
 
+<img src="docs/assets/pmr-wordmark.png" alt="pmr in sculpted cyan, violet, pink and amber lettering" width="420">
+
 **Keep your processes running. Keep your terminal useful.**
 
 `pmr` is a process manager written in Rust for developers and coding agents. Start a service, follow its logs, inspect it as JSON and restart it when it fails, using a familiar PM2-style CLI.
 
 The supervisor runs as a native binary. Your applications keep their own runtimes: Node.js, Python, shell scripts or compiled executables.
 
-![pmr monitoring real demo services in a terminal](docs/assets/pmr-dashboard.png)
+![pmr monitoring real demo services in a terminal](docs/assets/pmr-dashboard.jpg)
 
 [Install](#install) · [Quick start](#quick-start) · [Benchmarks](benchmarks/README.md) · [Agent guide](docs/agents.md) · [Contribute](CONTRIBUTING.md)
 
@@ -101,6 +103,8 @@ pmr save
 ## Performance
 
 The [benchmark report](benchmarks/README.md) compares pmr with PM2 6.0.14 and 7.0.4 on an Apple M1 Max MacBook Pro with 10 CPU cores and 32 GB RAM. It includes CLI latency, application readiness, a direct-Node HTTP baseline, exact software versions and every recorded sample.
+
+Listing 10 processes as JSON took a median **14.70 ms with pmr** and **100.09 ms with PM2 7.0.4** across 30 samples per manager on that machine. That is a 6.81× ratio for this command.
 
 Command latency and application throughput answer different questions. A faster process-list command does not make your application faster. Results describe this machine and workload, and can be reproduced with the included harness.
 
