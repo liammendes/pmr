@@ -4,6 +4,8 @@ pub mod constants;
 pub mod daemon;
 pub mod deploy;
 pub mod god;
+pub mod live;
+mod log_tail;
 pub mod modules;
 pub mod paths;
 pub mod process;

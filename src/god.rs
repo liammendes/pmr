@@ -24,7 +24,7 @@ use crate::constants::{
 };
 use crate::paths::PmrPaths;
 use crate::process::{AxmAction, AxmMetric, Monit, Pm2Env, ProcessDescription};
-use crate::protocol::{BusEvent, BusProcessRef};
+use crate::protocol::{BusEvent, BusProcessRef, ProcessList};
 
 pub struct ClusterBalancer {
     pub workers: Arc<std::sync::Mutex<BTreeMap<u32, u16>>>,
@@ -169,8 +169,34 @@ impl God {
     }
 
     pub fn refresh_monitor_data(&mut self) {
-        self.sys.refresh_processes(ProcessesToUpdate::All, true);
-        for proc in self.clusters_db.values_mut() {
+        let ids: Vec<_> = self.clusters_db.keys().copied().collect();
+        self.refresh_monitor_data_for(&ids);
+    }
+
+    fn refresh_monitor_data_for(&mut self, ids: &[u32]) {
+        let pids: Vec<_> = ids
+            .iter()
+            .filter_map(|id| self.clusters_db.get(id))
+            .filter(|p| matches!(p.pm2_env.status.as_str(), ONLINE_STATUS | LAUNCHING_STATUS))
+            .map(|p| {
+                Pid::from_u32(
+                    p.pm2_env
+                        .axm_options
+                        .get("pid")
+                        .and_then(|v| v.as_u64())
+                        .map_or(p.pid, |p| p as u32),
+                )
+            })
+            .filter(|pid| pid.as_u32() > 0)
+            .collect();
+        if !pids.is_empty() {
+            self.sys
+                .refresh_processes(ProcessesToUpdate::Some(&pids), true);
+        }
+        for id in ids {
+            let Some(proc) = self.clusters_db.get_mut(id) else {
+                continue;
+            };
             let target_pid = proc
                 .pm2_env
                 .axm_options
@@ -212,7 +238,7 @@ impl God {
     }
 
     pub fn get_formatted_process(&mut self, id: u32) -> Option<ProcessDescription> {
-        self.refresh_monitor_data();
+        self.refresh_monitor_data_for(&[id]);
         self.clusters_db.get(&id).map(|p| ProcessDescription {
             pid: p.pid,
             name: p.pm2_env.name.clone(),
@@ -220,6 +246,30 @@ impl God {
             pm_id: p.pm2_env.pm_id,
             monit: p.monit.clone(),
         })
+    }
+
+    /// Select IDs before refreshing metrics or cloning process environments.
+    pub fn get_process_list(&mut self, limit: usize, descending: bool) -> ProcessList {
+        let total = self.clusters_db.len();
+        let limit = if limit == 0 { total } else { limit };
+        let ids: Vec<_> = if descending {
+            self.clusters_db.keys().rev().take(limit).copied().collect()
+        } else {
+            self.clusters_db.keys().take(limit).copied().collect()
+        };
+        self.refresh_monitor_data_for(&ids);
+        let processes = ids
+            .into_iter()
+            .filter_map(|id| self.clusters_db.get(&id))
+            .map(|p| ProcessDescription {
+                pid: p.pid,
+                name: p.pm2_env.name.clone(),
+                pm2_env: p.pm2_env.clone(),
+                pm_id: p.pm2_env.pm_id,
+                monit: p.monit.clone(),
+            })
+            .collect();
+        ProcessList { total, processes }
     }
 }
 

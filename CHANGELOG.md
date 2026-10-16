@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add `logs --live`: a terminal view that automatically follows the newest process, shows its latest output and exit status, and retains the last result after completion.
+- Bound the live viewer's output and event queue, read file tails without loading whole logs, and add a lightweight latest-process lookup for updated daemons.
+- Apply ID-based list limits inside updated daemons before refreshing metrics or cloning environments; tail ordinary logs with backwards file reads and cache only the selected process's logs in `monit`.
 - Limit `ls` and its aliases to 25 processes and `logs` to 5 unique log files by default. Add `--limit`, with `0` for an unlimited view.
 - Support `--sort asc|desc` for process ID order in `ls` and file modification time in `logs`, newest first by default.
 - Apply sorting in `monit`, with a visible order indicator and an `o` shortcut to reverse it while keeping the selected process.

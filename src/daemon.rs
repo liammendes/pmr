@@ -86,7 +86,22 @@ pub async fn run_daemon(paths: PmrPaths) -> Result<()> {
                                 }
                             }
                         }
-                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(broadcast::error::RecvError::Lagged(count)) => {
+                            // Let live clients recover from disk without repeatedly
+                            // replacing correctly ordered events with file snapshots.
+                            let gap = json!({
+                                "event": "pmr:gap", "at": crate::god::now_ms(),
+                                "process": {"pm_id": null, "name": "PMR", "namespace": "default"},
+                                "data": {"dropped": count}
+                            });
+                            if writer
+                                .write_all(format!("{gap}\n").as_bytes())
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
                         Err(broadcast::error::RecvError::Closed) => break,
                     }
                 }
@@ -317,6 +332,27 @@ async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bo
             let mut g = god.lock().await;
             let procs = g.get_formatted_processes();
             (RpcResponse::success(procs), false)
+        }
+        RpcRequest::GetProcessList { limit, descending } => {
+            let mut g = god.lock().await;
+            (
+                RpcResponse::success(g.get_process_list(limit, descending)),
+                false,
+            )
+        }
+        RpcRequest::GetLatestLogProcess { target } => {
+            let selector = match crate::live::LogSelector::new(&target) {
+                Ok(selector) => selector,
+                Err(err) => return (RpcResponse::err(err.to_string()), false),
+            };
+            let g = god.lock().await;
+            let latest =
+                g.clusters_db.values().rev().find(|p| {
+                    selector.matches(p.pm2_env.pm_id, &p.pm2_env.name, &p.pm2_env.namespace)
+                });
+            // Do not refresh system metrics or serialize the full process inventory.
+            let latest = latest.map(|p| crate::live::LiveProcess::from(&p.pm2_env));
+            (RpcResponse::success(latest), false)
         }
         RpcRequest::Prepare { env, instances } => {
             match prepare_and_launch(god, *env, instances).await {

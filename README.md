@@ -92,6 +92,28 @@ the order changes or the list refreshes. The monitor shows all processes.
 Existing field sorts such as `--sort name:asc` and `--sort cpu:desc` work in both
 `ls` and `monit`. `pmr jlist` and `pmr prettylist` always return the full inventory.
 
+For a screen that follows the newest process automatically:
+
+```sh
+pmr logs --live
+pmr logs --live --lines 1
+pmr logs jobs --live --lines 10
+```
+
+The live screen replaces the previous process's output in place, shows its status
+and exit code, and keeps the last result visible after it finishes. With no
+`--lines`, it shows the latest command's recent output; `--lines N` limits this to
+the last N lines, and `--lines 1` shows just the latest line. Use Up/Down or
+Page Up/Down to scroll the retained output, and End to follow the latest output.
+Press `q` or Ctrl-C to leave. Names, namespaces, IDs, regular expressions, `--out` and `--err`
+work as filters. This is a terminal view; use ordinary `logs` for redirected,
+raw or JSON output.
+
+The live viewer retains up to 64 KiB of output, displays up to 4 KiB per line,
+and reads only file tails. The saved log files are unaffected. This does not make
+the manager an unlimited command-history store. See [scaling and retention](docs/scaling.md)
+for the measured checks and remaining limits.
+
 ```sh
 pmr restart api
 pmr jlist

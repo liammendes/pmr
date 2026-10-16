@@ -205,6 +205,55 @@ impl PmrClient {
             .into_processes()
     }
 
+    pub async fn list_display(
+        &self,
+        limit: usize,
+        sort: &str,
+    ) -> Result<crate::protocol::ProcessList> {
+        let (field, descending) = crate::ux::process_sort_order(Some(sort), "id");
+        if field == "id" {
+            let response = self
+                .request(&RpcRequest::GetProcessList { limit, descending })
+                .await?;
+            if response.ok {
+                return Ok(serde_json::from_value(response.data)?);
+            }
+            let error = response.error.unwrap_or_default();
+            if !error.contains("unknown variant") {
+                return Err(anyhow!(error));
+            }
+        }
+        // Keep older daemons and the existing field-based sorts compatible.
+        let mut processes = self.list().await?;
+        let total = processes.len();
+        crate::ux::sort_processes(&mut processes, Some(sort), "id");
+        if limit > 0 {
+            processes.truncate(limit);
+        }
+        Ok(crate::protocol::ProcessList { total, processes })
+    }
+
+    /// A bounded queue for a live screen; slow rendering must not grow memory indefinitely.
+    pub async fn subscribe_bus_bounded(&self) -> Result<mpsc::Receiver<BusEvent>> {
+        let stream = UnixStream::connect(&self.paths.daemon_pub_port).await?;
+        let (tx, rx) = mpsc::channel(128);
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stream).lines();
+            loop {
+                tokio::select! {
+                    _ = tx.closed() => break,
+                    line = lines.next_line() => {
+                        let Ok(Some(line)) = line else { break };
+                        if let Ok(event) = serde_json::from_str::<BusEvent>(&line) {
+                            if tx.send(event).await.is_err() { break; }
+                        }
+                    }
+                }
+            }
+        });
+        Ok(rx)
+    }
+
     pub async fn resolve_target_ids(&self, target: &str) -> Result<Vec<u32>> {
         self.resolve_target_ids_filtered(target, true).await
     }

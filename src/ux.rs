@@ -2,8 +2,9 @@ use anyhow::{anyhow, Result};
 use chrono::{DateTime, Local, Utc};
 use regex::Regex;
 use std::cmp::Ordering;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use unicode_width::UnicodeWidthStr;
@@ -755,6 +756,7 @@ fn select_log_files(
     opts: &LogOptions,
 ) -> Vec<LogFile> {
     let mut files: Vec<LogFile> = Vec::new();
+    let mut file_indices: HashMap<PathBuf, usize> = HashMap::new();
     let mut add = |path: &Path, proc: Option<&ProcessDescription>, stream_type| {
         if path.as_os_str().is_empty() || path == Path::new("/dev/null") {
             return;
@@ -766,12 +768,13 @@ fn select_log_files(
             return;
         }
         let path = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-        if let Some(file) = files.iter_mut().find(|f| f.path == path) {
+        if let Some(&index) = file_indices.get(&path) {
             if let Some(proc) = proc {
-                file.streams.push((proc.pm_id, stream_type));
+                files[index].streams.push((proc.pm_id, stream_type));
             }
             return;
         }
+        file_indices.insert(path.clone(), files.len());
         files.push(LogFile {
             path,
             label: proc.map_or_else(|| "PM2".into(), |p| format!("{}|{}", p.pm_id, p.name)),
@@ -1059,13 +1062,9 @@ fn tail_file_with_type(
     lines_count: usize,
     opts: &LogOptions,
 ) {
-    let Ok(bytes) = fs::read(path) else {
+    let Ok(mut reader) = crate::log_tail::tail_reader(path, lines_count) else {
         return;
     };
-    let content = String::from_utf8_lossy(&bytes);
-    let all_lines: Vec<&str> = content.lines().collect();
-    let start = all_lines.len().saturating_sub(lines_count);
-    let tail_slice = &all_lines[start..];
 
     if !opts.raw && !opts.json && !opts.format {
         if opts.use_color {
@@ -1085,8 +1084,16 @@ fn tail_file_with_type(
         _ => "\x1b[32m",
     };
 
-    for &line in tail_slice {
-        let rendered = highlight_str(line, opts.highlight.as_deref(), opts.use_color);
+    let mut bytes = Vec::new();
+    while reader.read_until(b'\n', &mut bytes).is_ok_and(|n| n > 0) {
+        if bytes.last() == Some(&b'\n') {
+            bytes.pop();
+            if bytes.last() == Some(&b'\r') {
+                bytes.pop();
+            }
+        }
+        let line = String::from_utf8_lossy(&bytes);
+        let rendered = highlight_str(&line, opts.highlight.as_deref(), opts.use_color);
         if opts.json && !opts.nostream {
             let pid_val = pm_id_str
                 .parse::<u32>()
@@ -1117,6 +1124,7 @@ fn tail_file_with_type(
                 println!("{}{:<10} | {}", ts_prefix, label, rendered);
             }
         }
+        bytes.clear();
     }
     if !opts.raw && (!opts.json || opts.nostream) && (!opts.format || opts.nostream) {
         println!();

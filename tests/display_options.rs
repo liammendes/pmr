@@ -404,3 +404,87 @@ fn live_logs_follow_only_the_selected_files_even_with_no_history() {
         std::thread::sleep(Duration::from_millis(10));
     }
 }
+
+#[test]
+fn latest_log_lookup_returns_one_small_record() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::UnixStream;
+    let fixture = Fixture::new(30);
+    let paths = pmr::PmrPaths::new(Some(&fixture.home));
+    for (target, expected) in [
+        ("all", 29),
+        ("even", 28),
+        ("worker-29", 0),
+        ("/worker-0[12]/", 28),
+    ] {
+        let mut stream = UnixStream::connect(&paths.daemon_rpc_port).unwrap();
+        writeln!(
+            stream,
+            "{}",
+            json!({"method":"getLatestLogProcess","params":{"target":target}})
+        )
+        .unwrap();
+        let mut line = String::new();
+        BufReader::new(stream).read_line(&mut line).unwrap();
+        let response: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(response["ok"], true);
+        assert_eq!(response["data"]["pm_id"], expected);
+        assert!(response["data"].get("pm2_env").is_none());
+        assert!(
+            line.len() < 2048,
+            "The latest record must not contain the full inventory or environment"
+        );
+    }
+}
+
+#[test]
+fn daemon_limits_process_rows_before_returning_them() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::UnixStream;
+    let fixture = Fixture::new(30);
+    let paths = pmr::PmrPaths::new(Some(&fixture.home));
+    for (limit, descending, expected) in [
+        (3, true, vec![29, 28, 27]),
+        (3, false, vec![0, 1, 2]),
+        (0, false, (0..30).collect()),
+        (99, true, (0..30).rev().collect()),
+    ] {
+        let mut stream = UnixStream::connect(&paths.daemon_rpc_port).unwrap();
+        writeln!(
+            stream,
+            "{}",
+            json!({
+                "method": "getProcessList", "params": {"limit": limit, "descending": descending}
+            })
+        )
+        .unwrap();
+        let mut line = String::new();
+        BufReader::new(stream).read_line(&mut line).unwrap();
+        let response: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(response["ok"], true);
+        assert_eq!(response["data"]["total"], 30);
+        let ids: Vec<_> = response["data"]["processes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["pm_id"].as_u64().unwrap())
+            .collect();
+        assert_eq!(ids, expected);
+    }
+}
+
+#[test]
+fn live_mode_rejects_incompatible_output_flags() {
+    let fixture = Fixture::new(0);
+    for option in ["--raw", "--json", "--format", "--nostream"] {
+        let out = fixture
+            .command(&["logs", "--live", option])
+            .output()
+            .unwrap();
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stderr).contains("cannot be used with"));
+    }
+    let out = fixture.command(&["logs", "--live"]).output().unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("interactive terminal"));
+}

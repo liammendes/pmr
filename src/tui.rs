@@ -14,7 +14,6 @@ use ratatui::{
     Terminal,
 };
 use std::collections::{BTreeMap, VecDeque};
-use std::fs;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -87,37 +86,7 @@ async fn run_dashboard_loop(
     let mut scroll_offsets: [u16; 4] = [0; 4];
     let mut logs_by_id: BTreeMap<u32, VecDeque<(bool, String)>> = BTreeMap::new();
 
-    // Seed initial logs from disk
-    for p in &processes {
-        let mut q = VecDeque::new();
-        if let Ok(content) = fs::read_to_string(&p.pm2_env.pm_out_log_path) {
-            for line in content
-                .lines()
-                .rev()
-                .take(100)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-            {
-                q.push_back((false, line.to_string()));
-            }
-        }
-        if let Ok(content) = fs::read_to_string(&p.pm2_env.pm_err_log_path) {
-            for line in content
-                .lines()
-                .rev()
-                .take(50)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-            {
-                q.push_back((true, line.to_string()));
-            }
-        }
-        logs_by_id.insert(p.pm_id, q);
-    }
-
-    let mut bus_rx = client.subscribe_bus().await.ok();
+    let mut bus_rx = client.subscribe_bus_bounded().await.ok();
     let mut last_refresh = Instant::now();
 
     loop {
@@ -125,8 +94,29 @@ async fn run_dashboard_loop(
             break;
         }
 
+        // Only the selected process needs an output cache. Read bounded file tails
+        // when selection changes instead of loading every process's entire logs.
+        if let Some(p) = processes.get(selected_idx) {
+            if !logs_by_id.contains_key(&p.pm_id) {
+                logs_by_id.clear();
+                let mut q = VecDeque::new();
+                for (is_err, path, count) in [
+                    (false, &p.pm2_env.pm_out_log_path, 100),
+                    (true, &p.pm2_env.pm_err_log_path, 50),
+                ] {
+                    for line in crate::live::read_tail(path, count) {
+                        q.push_back((is_err, line));
+                    }
+                }
+                logs_by_id.insert(p.pm_id, q);
+            }
+        } else {
+            logs_by_id.clear();
+        }
+
         if let Some(ref mut rx) = bus_rx {
-            while let Ok(ev) = rx.try_recv() {
+            for _ in 0..128 {
+                let Ok(ev) = rx.try_recv() else { break };
                 if ev.event == "log:out" || ev.event == "log:err" {
                     if let Some(id) = ev.process.pm_id.as_u64().map(|n| n as u32) {
                         let is_err = ev.event == "log:err";
@@ -135,9 +125,16 @@ async fn run_dashboard_loop(
                                 .get(selected_idx)
                                 .map(|p| p.pm_id == id)
                                 .unwrap_or(false);
+                            if !is_selected {
+                                continue;
+                            }
                             let q = logs_by_id.entry(id).or_default();
                             for l in data.lines() {
-                                q.push_back((is_err, l.to_string()));
+                                let mut end = l.len().min(4096);
+                                while !l.is_char_boundary(end) {
+                                    end -= 1;
+                                }
+                                q.push_back((is_err, l[..end].to_string()));
                                 if q.len() > 400 {
                                     q.pop_front();
                                 } else if is_selected && scroll_offsets[1] > 0 {
