@@ -67,6 +67,31 @@ pmr monit
 
 Quit the monitor with `q`. The service continues running in the background.
 
+`pmr ls` shows the newest 25 processes by process ID. `pmr logs` shows and
+follows the 5 most recently modified log files. Adjust these views with:
+
+```sh
+pmr ls --limit 50 --sort desc
+pmr ls --limit 0 --sort asc
+pmr logs --limit 10 --sort desc
+pmr logs --limit 0 --sort asc --nostream
+pmr monit --sort asc
+```
+
+`--limit 0` removes the limit. Sorting happens before the limit: `asc` selects
+the oldest first, and `desc` selects the newest first. For processes, this uses
+the process ID; for logs, it uses each file's modification time. `--lines` still
+controls the number of historical lines per file. Log filters apply before the
+limit, shared file paths count once, and the daemon log counts when included in
+the normal text view. A limited log stream follows the files selected at startup;
+run it again to refresh the selection. Unlimited streams also include new processes.
+
+In `pmr monit`, press `o` to reverse the sort order. The process pane shows the
+current field, direction and shortcut. Your selected process stays selected when
+the order changes or the list refreshes. The monitor shows all processes.
+Existing field sorts such as `--sort name:asc` and `--sort cpu:desc` work in both
+`ls` and `monit`. `pmr jlist` and `pmr prettylist` always return the full inventory.
+
 ```sh
 pmr restart api
 pmr jlist

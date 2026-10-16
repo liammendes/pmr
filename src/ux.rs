@@ -2,8 +2,9 @@ use anyhow::{anyhow, Result};
 use chrono::{DateTime, Local, Utc};
 use regex::Regex;
 use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use unicode_width::UnicodeWidthStr;
 
@@ -253,15 +254,11 @@ pub fn render_kv_table(pairs: &[(String, String)], use_color: bool) -> String {
     out
 }
 
-pub fn render_process_list(
-    list: &[ProcessDescription],
-    mini_list: bool,
-    sort_spec: Option<&str>,
-    use_color: bool,
-) -> String {
-    let mut sorted = list.to_vec();
-    let default_field = if mini_list { "id" } else { "name" };
-    let (field, desc) = match sort_spec {
+pub fn process_sort_order(sort_spec: Option<&str>, default_field: &str) -> (String, bool) {
+    match sort_spec {
+        Some(spec) if spec.eq_ignore_ascii_case("asc") || spec.eq_ignore_ascii_case("desc") => {
+            ("id".to_string(), spec.eq_ignore_ascii_case("desc"))
+        }
         Some(spec) => {
             let mut parts = spec.split(':');
             let f = parts.next().unwrap_or(default_field).to_ascii_lowercase();
@@ -272,9 +269,17 @@ pub fn render_process_list(
             (f, d)
         }
         None => (default_field.to_string(), false),
-    };
+    }
+}
 
-    sorted.sort_by(|a, b| {
+pub fn sort_processes(
+    processes: &mut [ProcessDescription],
+    sort_spec: Option<&str>,
+    default_field: &str,
+) {
+    let (field, desc) = process_sort_order(sort_spec, default_field);
+
+    processes.sort_by(|a, b| {
         let ord = match field.as_str() {
             "name" => a.name.cmp(&b.name).then_with(|| a.pm_id.cmp(&b.pm_id)),
             "namespace" => a
@@ -322,6 +327,24 @@ pub fn render_process_list(
             ord
         }
     });
+}
+
+pub fn render_process_list(
+    list: &[ProcessDescription],
+    mini_list: bool,
+    sort_spec: Option<&str>,
+    use_color: bool,
+    limit: usize,
+) -> String {
+    let mut sorted = list.to_vec();
+    sort_processes(
+        &mut sorted,
+        sort_spec,
+        if mini_list { "id" } else { "name" },
+    );
+    if limit > 0 {
+        sorted.truncate(limit);
+    }
 
     if mini_list {
         let mut out = String::new();
@@ -701,6 +724,8 @@ pub fn render_describe(proc: &ProcessDescription, use_color: bool) -> String {
 pub struct LogOptions {
     pub target: String,
     pub lines: usize,
+    pub limit: usize,
+    pub sort_desc: bool,
     pub raw: bool,
     pub json: bool,
     pub format: bool,
@@ -710,6 +735,88 @@ pub struct LogOptions {
     pub nostream: bool,
     pub highlight: Option<String>,
     pub use_color: bool,
+}
+
+struct LogFile {
+    path: PathBuf,
+    label: String,
+    app_name: String,
+    id: String,
+    stream_type: &'static str,
+    modified: Option<SystemTime>,
+    streams: Vec<(u32, &'static str)>,
+}
+
+fn select_log_files(
+    list: &[ProcessDescription],
+    daemon_log: &Path,
+    target: &str,
+    compiled_regex: Option<&Regex>,
+    opts: &LogOptions,
+) -> Vec<LogFile> {
+    let mut files: Vec<LogFile> = Vec::new();
+    let mut add = |path: &Path, proc: Option<&ProcessDescription>, stream_type| {
+        if path.as_os_str().is_empty() || path == Path::new("/dev/null") {
+            return;
+        }
+        let Ok(metadata) = fs::metadata(path) else {
+            return;
+        };
+        if !metadata.is_file() {
+            return;
+        }
+        let path = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        if let Some(file) = files.iter_mut().find(|f| f.path == path) {
+            if let Some(proc) = proc {
+                file.streams.push((proc.pm_id, stream_type));
+            }
+            return;
+        }
+        files.push(LogFile {
+            path,
+            label: proc.map_or_else(|| "PM2".into(), |p| format!("{}|{}", p.pm_id, p.name)),
+            app_name: proc.map_or_else(|| "PM2".into(), |p| p.name.clone()),
+            id: proc.map_or_else(|| "PM2".into(), |p| p.pm_id.to_string()),
+            stream_type,
+            modified: metadata.modified().ok(),
+            streams: proc.map_or_else(Vec::new, |p| vec![(p.pm_id, stream_type)]),
+        });
+    };
+    if !opts.raw
+        && !opts.json
+        && !opts.format
+        && matches!(target, "all" | "PM2" | "PMR")
+        && !opts.err_only
+        && !opts.out_only
+    {
+        add(daemon_log, None, "PM2");
+    }
+    for proc in list {
+        if !matches_log_target(proc, target, compiled_regex) {
+            continue;
+        }
+        if !opts.err_only {
+            add(Path::new(&proc.pm2_env.pm_out_log_path), Some(proc), "out");
+        }
+        if !opts.out_only {
+            add(Path::new(&proc.pm2_env.pm_err_log_path), Some(proc), "err");
+        }
+    }
+    files.sort_by(|a, b| {
+        let order = a
+            .modified
+            .cmp(&b.modified)
+            .then_with(|| a.path.cmp(&b.path));
+        if opts.sort_desc {
+            order.reverse()
+        } else {
+            order
+        }
+    });
+    if opts.limit > 0 {
+        files.truncate(opts.limit);
+    }
+    files
 }
 
 fn format_timestamp_prefix(ts_opt: &Option<String>, use_color: bool) -> String {
@@ -755,6 +862,19 @@ pub async fn run_logs(client: &PmrClient, opts: LogOptions) -> Result<()> {
             None
         };
 
+    let files = select_log_files(
+        &list,
+        &client.paths.pm2_log_file_path,
+        target,
+        compiled_regex.as_ref(),
+        &opts,
+    );
+    let selected_streams: HashSet<_> = files
+        .iter()
+        .flat_map(|f| f.streams.iter().copied())
+        .collect();
+    let selected_daemon = files.iter().any(|f| f.stream_type == "PM2");
+
     if opts.lines > 0 {
         if !opts.raw && !opts.json && !opts.format {
             if opts.use_color {
@@ -774,53 +894,16 @@ pub async fn run_logs(client: &PmrClient, opts: LogOptions) -> Result<()> {
             }
         }
 
-        if !opts.raw
-            && !opts.json
-            && !opts.format
-            && (target == "all" || target == "PM2" || target == "PMR")
-            && !opts.err_only
-            && !opts.out_only
-        {
-            tail_file(
-                &client.paths.pm2_log_file_path,
-                "PM2",
-                "PM2",
-                "PM2",
+        for file in &files {
+            tail_file_with_type(
+                &file.path,
+                &file.label,
+                &file.app_name,
+                &file.id,
+                file.stream_type,
                 opts.lines,
                 &opts,
             );
-        }
-
-        let mut seen = Vec::new();
-        for proc in &list {
-            let matched = matches_log_target(proc, target, compiled_regex.as_ref());
-            if !matched {
-                continue;
-            }
-            let label = format!("{}|{}", proc.pm_id, proc.name);
-            let id_str = proc.pm_id.to_string();
-            if !opts.err_only {
-                let p = &proc.pm2_env.pm_out_log_path;
-                if p != "/dev/null" && !seen.contains(p) {
-                    seen.push(p.clone());
-                    tail_file(Path::new(p), &label, &proc.name, &id_str, opts.lines, &opts);
-                }
-            }
-            if !opts.out_only {
-                let p = &proc.pm2_env.pm_err_log_path;
-                if p != "/dev/null" && !seen.contains(p) {
-                    seen.push(p.clone());
-                    tail_file_with_type(
-                        Path::new(p),
-                        &label,
-                        &proc.name,
-                        &id_str,
-                        "err",
-                        opts.lines,
-                        &opts,
-                    );
-                }
-            }
         }
     }
 
@@ -831,7 +914,15 @@ pub async fn run_logs(client: &PmrClient, opts: LogOptions) -> Result<()> {
     let mut rx = client.subscribe_bus().await?;
     while let Some(ev) = rx.recv().await {
         if ev.event != "log:out" && ev.event != "log:err" && ev.event != "log:PM2" {
-            if opts.json && ev.event == "process:event" {
+            if opts.json
+                && ev.event == "process:event"
+                && (opts.limit == 0
+                    || ev.process.pm_id.as_u64().is_some_and(|id| {
+                        selected_streams
+                            .iter()
+                            .any(|(selected_id, _)| u64::from(*selected_id) == id)
+                    }))
+            {
                 println!(
                     "{}",
                     serde_json::json!({
@@ -843,6 +934,23 @@ pub async fn run_logs(client: &PmrClient, opts: LogOptions) -> Result<()> {
                 );
             }
             continue;
+        }
+
+        // A bounded log command follows the same files it showed at startup.
+        // Unlimited mode continues to include new processes, as before.
+        if opts.limit > 0 {
+            let selected = match ev.event.as_str() {
+                "log:PM2" => selected_daemon,
+                event => ev.process.pm_id.as_u64().is_some_and(|id| {
+                    u32::try_from(id).ok().is_some_and(|id| {
+                        selected_streams
+                            .contains(&(id, if event == "log:err" { "err" } else { "out" }))
+                    })
+                }),
+            };
+            if !selected {
+                continue;
+            }
         }
 
         if opts.err_only && ev.event != "log:err" {
@@ -940,18 +1048,6 @@ fn matches_log_target(
         return re.is_match(&proc.name);
     }
     proc.name == target || proc.pm_id.to_string() == target || proc.pm2_env.namespace == target
-}
-
-fn tail_file(
-    path: &Path,
-    label: &str,
-    app_name: &str,
-    pm_id_str: &str,
-    lines_count: usize,
-    opts: &LogOptions,
-) {
-    let stype = if label == "PM2" { "PM2" } else { "out" };
-    tail_file_with_type(path, label, app_name, pm_id_str, stype, lines_count, opts);
 }
 
 fn tail_file_with_type(
@@ -1153,7 +1249,7 @@ pub async fn print_report(client: &PmrClient) -> Result<()> {
 
     let procs = client.list().await.unwrap_or_default();
     println!("{}", title(&format!("Process list ({})", procs.len())));
-    println!("{}", render_process_list(&procs, false, None, false));
+    println!("{}", render_process_list(&procs, false, None, false, 0));
     println!("```");
     Ok(())
 }

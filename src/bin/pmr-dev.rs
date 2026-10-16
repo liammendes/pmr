@@ -185,6 +185,8 @@ async fn run_dev(cli: DevCli) -> Result<()> {
     let log_opts = LogOptions {
         target: "all".to_string(),
         lines: 0,
+        limit: 0,
+        sort_desc: true,
         raw: cli.raw,
         json: false,
         format: false,

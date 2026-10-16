@@ -298,7 +298,7 @@ struct Cli {
     #[arg(long = "disable-trace", global = true)]
     disable_trace: bool,
 
-    /// Sort processes according to field's name (e.g. name:asc, cpu:desc, memory:desc)
+    /// Sort asc/desc (process ID; logs by file modification time), or processes by field:order
     #[arg(long = "sort", global = true)]
     sort: Option<String>,
 
@@ -405,12 +405,16 @@ enum Commands {
     #[command(name = "env")]
     Env { id: String },
 
-    /// List all processes
+    /// List the newest 25 processes by default
     #[command(
         name = "list",
         visible_aliases = ["ls", "l", "ps", "status"]
     )]
-    List,
+    List {
+        /// Maximum processes to display (0 shows all)
+        #[arg(long, default_value_t = 25)]
+        limit: usize,
+    },
 
     /// List all processes in JSON format
     #[command(name = "jlist")]
@@ -420,13 +424,16 @@ enum Commands {
     #[command(name = "prettylist")]
     Prettylist,
 
-    /// Stream logs file. Default stream all logs
+    /// Show and follow the 5 most recently modified log files by default
     #[command(name = "logs", visible_alias = "log")]
     Logs {
         #[arg(default_value = "all")]
         target: String,
         #[arg(long = "lines", default_value_t = 15, allow_hyphen_values = true)]
         lines: isize,
+        /// Maximum unique log files to show and follow (0 follows all)
+        #[arg(long, default_value_t = 5)]
+        limit: usize,
         #[arg(long = "raw")]
         raw: bool,
         #[arg(long = "json")]
@@ -1174,6 +1181,8 @@ async fn main() {
             LogOptions {
                 target: "all".to_string(),
                 lines: 0,
+                limit: 0,
+                sort_desc: true,
                 raw: false,
                 json: false,
                 format: false,
@@ -1211,10 +1220,21 @@ async fn execute_command(
 ) -> Result<()> {
     let show_list = |procs: &[pmr::process::ProcessDescription]| {
         if !silent {
+            let (sort, limit) = match cmd {
+                Commands::List { limit } => (cli.sort.as_deref().or(Some("desc")), *limit),
+                _ => (cli.sort.as_deref(), 0),
+            };
             println!(
                 "{}",
-                render_process_list(procs, cli.mini_list, cli.sort.as_deref(), use_color)
+                render_process_list(procs, cli.mini_list, sort, use_color, limit)
             );
+            if limit > 0 && procs.len() > limit {
+                println!(
+                    "Showing {} of {} processes. Use --limit 0 to show all.",
+                    limit,
+                    procs.len()
+                );
+            }
         }
     };
 
@@ -1245,6 +1265,8 @@ async fn execute_command(
                     LogOptions {
                         target: attach_target,
                         lines: 0,
+                        limit: 0,
+                        sort_desc: true,
                         raw: false,
                         json: false,
                         format: false,
@@ -1327,6 +1349,8 @@ async fn execute_command(
                     LogOptions {
                         target: attach_target,
                         lines: 0,
+                        limit: 0,
+                        sort_desc: true,
                         raw: false,
                         json: false,
                         format: false,
@@ -1433,7 +1457,7 @@ async fn execute_command(
                 }
             }
         }
-        Commands::List => {
+        Commands::List { .. } => {
             if cli.watch {
                 loop {
                     let procs = client.list().await?;
@@ -1457,6 +1481,7 @@ async fn execute_command(
         Commands::Logs {
             target,
             lines,
+            limit,
             raw,
             json,
             format,
@@ -1471,11 +1496,18 @@ async fn execute_command(
                     .unwrap_or_else(|| "YYYY-MM-DD-HH:mm:ss".to_string())
             });
             let resolved_lines = if *lines < 0 { 15 } else { *lines as usize };
+            let sort_desc = match cli.sort.as_deref().unwrap_or("desc") {
+                s if s.eq_ignore_ascii_case("asc") => false,
+                s if s.eq_ignore_ascii_case("desc") => true,
+                _ => return Err(anyhow!("logs --sort must be asc or desc")),
+            };
             run_logs(
                 client,
                 LogOptions {
                     target: target.clone(),
                     lines: resolved_lines,
+                    limit: *limit,
+                    sort_desc,
                     raw: *raw,
                     json: *json,
                     format: *format,
@@ -1800,7 +1832,7 @@ async fn execute_command(
             show_list(&procs);
         }
         Commands::Monit => {
-            run_dashboard(client).await?;
+            run_dashboard(client, cli.sort.as_deref().unwrap_or("desc")).await?;
         }
         Commands::Imonit => {
             run_imonit(client, use_color).await?;

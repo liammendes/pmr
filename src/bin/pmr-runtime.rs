@@ -238,6 +238,8 @@ async fn run_runtime(cli: RuntimeCli) -> Result<()> {
     let log_opts = LogOptions {
         target: "all".to_string(),
         lines: 0,
+        limit: 0,
+        sort_desc: true,
         raw: !cli.formatted && !cli.json && !cli.format,
         json: cli.json,
         format: cli.format,
