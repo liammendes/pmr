@@ -324,6 +324,52 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Queue a durable one-shot command (use -- before its arguments)
+    Run {
+        program: String,
+        #[arg(last = true)]
+        args: Vec<String>,
+        /// Supply a UUID to make submission retries idempotent
+        #[arg(long)]
+        id: Option<String>,
+        /// Wait, print retained output, and return the command's exit code
+        #[arg(long)]
+        wait: bool,
+    },
+    /// Search and inspect durable command history (JSON)
+    History {
+        #[command(subcommand)]
+        action: Option<pmr::history_cli::Action>,
+    },
+    /// Show or configure shared process and disk queue limits
+    Limits {
+        #[arg(long)]
+        running: Option<usize>,
+        #[arg(long)]
+        queued: Option<usize>,
+    },
+    /// Show or configure retention; zero disables age/count expiry
+    Retention {
+        #[arg(long)]
+        history_days: Option<u32>,
+        #[arg(long)]
+        output_days: Option<u32>,
+        #[arg(long)]
+        max_records: Option<u64>,
+        /// Retained tail per pmr run command, in bytes (default 1048576)
+        #[arg(long)]
+        output_bytes: Option<u64>,
+    },
+    /// Install a verified release from github.com/liammendes/pmr
+    SelfUpdate {
+        /// Only check for an update
+        #[arg(long)]
+        check: bool,
+        /// Select an exact release, for example 1.1.0
+        #[arg(long = "release")]
+        release: Option<String>,
+    },
+
     /// Start and daemonize an app
     #[command(name = "start")]
     Start {
@@ -997,6 +1043,20 @@ async fn main() {
 
     // Handle internal/offline subcommands that do not require an active daemon first
     match cmd {
+        Commands::SelfUpdate { check, release } => {
+            let check = *check;
+            let release = release.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                pmr::self_update::update(check, release.as_deref())
+            })
+            .await
+            .unwrap_or_else(|error| Err(error.into()));
+            if let Err(error) = result {
+                eprintln!("Self-update: {error}");
+                std::process::exit(ERROR_EXIT);
+            }
+            return;
+        }
         Commands::InternalDaemon => {
             if let Err(e) = run_daemon(paths).await {
                 eprintln!("Daemon error: {}", e);
@@ -1087,7 +1147,7 @@ async fn main() {
                     println!("{}Completion uninstalled", PREFIX_MSG);
                 }
                 _ => {
-                    println!("# PMR shell completion\ncomplete -W \"start startOrRestart startOrReload stop restart reload delete scale reset describe env list ls jlist prettylist logs flush reloadLogs send attach sendSignal trigger pid id inspect ping update deepUpdate kill save cleardump resurrect startup unstartup logrotate ecosystem serve web monit imonit monitor unmonitor set multiset get conf config unset report sysinfos sysmonit install uninstall module:generate create package publish link unlink open plus autoinstall deploy pull forward backward profile:mem profile:cpu examples completion\" pmr pm2");
+                    println!("# PMR shell completion\ncomplete -W \"run history limits retention self-update start startOrRestart startOrReload stop restart reload delete scale reset describe env list ls jlist prettylist logs flush reloadLogs send attach sendSignal trigger pid id inspect ping update deepUpdate kill save cleardump resurrect startup unstartup logrotate ecosystem serve web monit imonit monitor unmonitor set multiset get conf config unset report sysinfos sysmonit install uninstall module:generate create package publish link unlink open plus autoinstall deploy pull forward backward profile:mem profile:cpu examples completion\" pmr pm2");
                 }
             }
             return;
@@ -1232,6 +1292,72 @@ async fn execute_command(
     };
 
     match cmd {
+        Commands::Run {
+            program,
+            args,
+            id,
+            wait,
+        } => {
+            pmr::history_cli::run(
+                client,
+                pmr::history_cli::RunOptions {
+                    program: program.clone(),
+                    args: args.clone(),
+                    id: id.clone(),
+                    wait: *wait,
+                    name: cli.process_name.clone(),
+                    namespace: cli.namespace.clone(),
+                    cwd: cli.cwd.clone(),
+                    interpreter: cli.interpreter.clone(),
+                },
+            )
+            .await?;
+        }
+        Commands::History { action } => {
+            let ascending = match cli.sort.as_deref() {
+                None | Some("desc") => false,
+                Some("asc") => true,
+                _ => return Err(anyhow!("history --sort must be asc or desc")),
+            };
+            pmr::history_cli::history(
+                client,
+                action,
+                cli.process_name.clone(),
+                cli.namespace.clone(),
+                ascending,
+            )
+            .await?;
+        }
+        Commands::Limits { running, queued } => {
+            pmr::history_cli::configure(
+                client,
+                pmr::history::SettingsPatch {
+                    max_running: *running,
+                    max_queued: *queued,
+                    ..Default::default()
+                },
+            )
+            .await?;
+        }
+        Commands::Retention {
+            history_days,
+            output_days,
+            max_records,
+            output_bytes,
+        } => {
+            pmr::history_cli::configure(
+                client,
+                pmr::history::SettingsPatch {
+                    history_days: *history_days,
+                    output_days: *output_days,
+                    max_records: *max_records,
+                    output_bytes: *output_bytes,
+                    ..Default::default()
+                },
+            )
+            .await?;
+        }
+
         Commands::Start {
             targets,
             script_args,

@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-16",
+  "pmr_version": "1.1.0",
+  "profile": "debug",
+  "platform": {
+    "os": "darwin",
+    "release": "27.2.0",
+    "architecture": "arm64",
+    "cpu": "Apple M1 Max",
+    "logical_cpus": 10,
+    "memory_bytes": 34359738368
+  },
+  "rust": "1.98.1",
+  "history": {
+    "records": 1000000,
+    "fixture": "synthetic completed metadata; no OS processes launched",
+    "seed_seconds": 126.859860667,
+    "transactions": 100,
+    "latest_page_queries": 100,
+    "exact_name_queries": 100,
+    "total_query_ms": 34.103333,
+    "database_bytes": 319668224,
+    "query_plan": "SEARCH runs USING COVERING INDEX runs_name_seq (name=? AND seq<?)"
+  },
+  "concurrency": {
+    "real_commands": 128,
+    "peak_running": 64,
+    "max_queued": 256,
+    "elapsed_seconds": 5.578,
+    "active_registry_after_completion": 0,
+    "workload": "64 five-second sleep commands, followed by 64 echo commands"
+  },
+  "terminal": {
+    "durable_live_default_lines": "passed",
+    "durable_live_explicit_lines": "passed",
+    "exit_code": 7,
+    "ignores_older_output": true
+  },
+  "limitations": "Single development machine. Query timings are cumulative, not percentile estimates. Synthetic metadata size and insertion time are not command execution throughput. No billion-record or maximum process capacity claim."
+}

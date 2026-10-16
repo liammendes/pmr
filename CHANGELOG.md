@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 — 2026-10-16
+
+- Add indexed SQLite command history, disk-backed one-shot queues, shared concurrency limits, opt-in retention and restart recovery.
+- Add checksum-verified GitHub self-updates without restarting the running daemon.
+- Require a Semantic Version bump for every PR. Centre the README header.
 
 - Add `logs --live`: a terminal view that automatically follows the newest process, shows its latest output and exit status, and retains the last result after completion.
 - Bound the live viewer's output and event queue, read file tails without loading whole logs, and add a lightweight latest-process lookup for updated daemons.

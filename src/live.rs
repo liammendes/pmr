@@ -59,6 +59,8 @@ impl LogSelector {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiveProcess {
+    #[serde(default)]
+    pub history_id: Option<String>,
     pub pm_id: u32,
     pub name: String,
     pub namespace: String,
@@ -73,6 +75,7 @@ pub struct LiveProcess {
 impl From<&Pm2Env> for LiveProcess {
     fn from(env: &Pm2Env) -> Self {
         Self {
+            history_id: None,
             pm_id: env.pm_id,
             name: env.name.clone(),
             namespace: env.namespace.clone(),
@@ -152,11 +155,16 @@ impl LiveState {
             .and_then(|v| v.as_str())
             .unwrap_or("");
         let switch = self.process.as_ref().is_none_or(|p| {
-            id > p.pm_id || (p.status == "deleted" && lifecycle && action == "online")
+            if p.history_id.is_some() {
+                lifecycle && matches!(action, "start" | "online") && event.at > p.created_at
+            } else {
+                id > p.pm_id || (p.status == "deleted" && lifecycle && action == "online")
+            }
         });
         if switch {
             self.selection_version = self.selection_version.wrapping_add(1);
             self.process = Some(LiveProcess {
+                history_id: None,
                 pm_id: id,
                 name: event.process.name.clone(),
                 namespace: event.process.namespace.clone(),
@@ -169,7 +177,11 @@ impl LiveState {
             });
             self.clear_lines();
         }
-        let Some(process) = self.process.as_mut().filter(|p| p.pm_id == id) else {
+        let Some(process) = self
+            .process
+            .as_mut()
+            .filter(|p| p.pm_id == id && p.history_id.is_none())
+        else {
             return;
         };
         if lifecycle {
@@ -233,7 +245,7 @@ impl LiveState {
         // A short-lived latest process may already have been deleted. Even if its
         // delete event was dropped, do not replace its result with an older job.
         let current_is_newer = self.process.as_ref().is_some_and(|current| {
-            current.pm_id != process.pm_id
+            (current.pm_id != process.pm_id || current.history_id != process.history_id)
                 && (current.created_at > process.created_at
                     || (current.created_at == process.created_at && current.pm_id > process.pm_id))
         });
@@ -302,6 +314,43 @@ async fn latest_process(client: &PmrClient, target: &str) -> Result<Option<LiveP
     Ok(serde_json::from_value(response.data)?)
 }
 
+async fn refresh_live(
+    state: &mut LiveState,
+    client: &PmrClient,
+    process: LiveProcess,
+    opts: &LogOptions,
+    recover: bool,
+) -> Result<()> {
+    let history_id = process.history_id.clone();
+    state.refresh_snapshot(process, opts, recover);
+    if let Some(id) = history_id {
+        if state.process.as_ref().and_then(|p| p.history_id.as_ref()) != Some(&id) {
+            return Ok(());
+        }
+        let stream = if opts.err_only {
+            Some("err".into())
+        } else if opts.out_only {
+            Some("out".into())
+        } else {
+            None
+        };
+        let output = crate::history_cli::request(
+            client,
+            crate::history::Request::Output {
+                id,
+                lines: opts.lines.min(100_000),
+                stream,
+            },
+        )
+        .await?;
+        state.clear_lines();
+        for line in output["text"].as_str().unwrap_or_default().lines() {
+            state.push(opts.err_only, line);
+        }
+    }
+    Ok(())
+}
+
 struct ScreenGuard;
 impl Drop for ScreenGuard {
     fn drop(&mut self) {
@@ -336,7 +385,7 @@ pub async fn run_live_logs(client: &PmrClient, opts: LogOptions) -> Result<()> {
         Err(err) => return Err(err),
     };
     if let Some(process) = initial {
-        state.seed(process, &opts);
+        refresh_live(&mut state, client, process, &opts, true).await?;
     }
     let mut recover_logs = false;
     // Apply events that arrived during lookup; never drain an unbounded burst.
@@ -382,7 +431,7 @@ pub async fn run_live_logs(client: &PmrClient, opts: LogOptions) -> Result<()> {
         if optimized && (recover_logs || last_resync.elapsed() >= Duration::from_secs(2)) {
             // Repair dropped events using a single indexed record and bounded file tails.
             if let Some(process) = latest_process(client, &opts.target).await? {
-                state.refresh_snapshot(process, &opts, recover_logs);
+                refresh_live(&mut state, client, process, &opts, recover_logs).await?;
             }
             recover_logs = false;
             last_resync = Instant::now();
@@ -402,7 +451,7 @@ pub async fn run_live_logs(client: &PmrClient, opts: LogOptions) -> Result<()> {
                 |p| {
                     format!(
                         "{} | {} | {}{}",
-                        p.pm_id,
+                        p.history_id.clone().unwrap_or_else(|| p.pm_id.to_string()),
                         p.name,
                         p.status,
                         p.exit_code
@@ -511,6 +560,41 @@ mod tests {
             status: None,
             manually: None,
         }
+    }
+
+    #[test]
+    fn durable_results_ignore_older_service_events_and_snapshots() {
+        let opts = options();
+        let mut state = LiveState::new(5);
+        let run = LiveProcess {
+            history_id: Some("new".into()),
+            pm_id: 0,
+            name: "job".into(),
+            namespace: "jobs".into(),
+            status: "succeeded".into(),
+            exit_code: Some(0),
+            unique_id: "new".into(),
+            created_at: 100,
+            out_path: String::new(),
+            err_path: String::new(),
+        };
+        state.seed(run.clone(), &opts);
+        state.push(false, "retained");
+        state.apply(
+            &log(999, "old service"),
+            &LogSelector::new("all").unwrap(),
+            &opts,
+        );
+        assert_eq!(
+            state.process.as_ref().unwrap().history_id.as_deref(),
+            Some("new")
+        );
+        let mut older = run;
+        older.history_id = Some("old".into());
+        older.unique_id = "old".into();
+        older.created_at = 10;
+        state.refresh_snapshot(older, &opts, true);
+        assert_eq!(state.lines[0].1, "retained");
     }
 
     #[test]

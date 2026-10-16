@@ -7,6 +7,8 @@ use crate::process::{Pm2Env, ProcessDescription};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "method", content = "params")]
 pub enum RpcRequest {
+    #[serde(rename = "history")]
+    History { request: crate::history::Request },
     #[serde(rename = "ping")]
     Ping,
     #[serde(rename = "getVersion")]

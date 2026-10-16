@@ -1,8 +1,10 @@
-# pmr
+<h1 align="center">pmr</h1>
 
-<img src="docs/assets/pmr-wordmark.svg" alt="pmr in deep blue gradient lettering" width="420">
+<p align="center">
+  <img src="docs/assets/pmr-wordmark.svg" alt="pmr in deep blue gradient lettering" width="420">
+</p>
 
-**Keep your processes running. Keep your terminal useful.**
+<p align="center"><strong>Keep your processes running. Keep your terminal useful.</strong></p>
 
 `pmr` is a process manager written in Rust for developers and coding agents. Start a service, follow its logs, inspect it as JSON and restart it when it fails, using a familiar PM2-style CLI.
 
@@ -110,9 +112,8 @@ work as filters. This is a terminal view; use ordinary `logs` for redirected,
 raw or JSON output.
 
 The live viewer retains up to 64 KiB of output, displays up to 4 KiB per line,
-and reads only file tails. The saved log files are unaffected. This does not make
-the manager an unlimited command-history store. See [scaling and retention](docs/scaling.md)
-for the measured checks and remaining limits.
+and reads only file tails. The saved log files are unaffected. For an indexed archive of one-shot commands, use `pmr run`. See [scaling and retention](docs/scaling.md)
+for storage, measured checks and remaining limits.
 
 ```sh
 pmr restart api
@@ -136,6 +137,30 @@ pmr save
 ```
 
 `save` writes the process list; `pmr resurrect` restores it. For reboot recovery, configure `pmr startup` for your operating system, review the generated setup command and then save the list. See [operations](docs/operations.md).
+
+## Durable one-shot commands
+
+Use `pmr run` for builds, checks and other commands you want to keep in a searchable archive:
+
+```sh
+pmr run /bin/sh --name build --wait -- -c 'cargo build'
+pmr history list --search build --limit 25
+pmr history logs <uuid> --lines 20
+pmr limits --running 64 --queued 10000
+pmr retention
+```
+
+Completed commands stay in an indexed SQLite history instead of the active service list. History expiry is opt-in; output retains a rolling 1 MiB tail per command by default. Queued work waits on disk when all running slots are occupied. See [scaling and retention](docs/scaling.md) for pagination, recovery, configuration and measured limits.
+
+## Update
+
+```sh
+pmr self-update --check
+pmr self-update
+pmr self-update --release 1.1.0
+```
+
+The updater downloads a newer release from this GitHub repository, checks its SHA-256 checksum, and replaces the four installed binaries together with rollback on installation errors. They must be regular files in the same writable directory. It leaves the running daemon and its processes alone; run `pmr update` when you are ready for a daemon restart. Keep using your package manager if it owns the installation. Downgrades are refused. Checksums verify download integrity; they are not an independent release signature.
 
 ## Where it fits
 
