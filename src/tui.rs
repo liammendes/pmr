@@ -14,7 +14,6 @@ use ratatui::{
     Terminal,
 };
 use std::collections::{BTreeMap, VecDeque};
-use std::fs;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -22,7 +21,7 @@ use std::time::{Duration, Instant};
 
 use crate::client::PmrClient;
 use crate::process::ProcessDescription;
-use crate::ux::{bytes_to_size, time_since};
+use crate::ux::{bytes_to_size, process_sort_order, sort_processes, time_since};
 
 struct TerminalCleanupGuard;
 
@@ -34,7 +33,7 @@ impl Drop for TerminalCleanupGuard {
 }
 
 /// Interactive 4-pane dashboard (`pmr monit` / `pmr dashboard`), matching `lib/API/Dashboard.js`.
-pub async fn run_dashboard(client: &PmrClient) -> Result<()> {
+pub async fn run_dashboard(client: &PmrClient, sort_spec: &str) -> Result<()> {
     enable_raw_mode()?;
     let _cleanup_guard = TerminalCleanupGuard;
     let mut stdout = io::stdout();
@@ -64,7 +63,7 @@ pub async fn run_dashboard(client: &PmrClient) -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let res = run_dashboard_loop(&mut terminal, client, &stop_flag).await;
+    let res = run_dashboard_loop(&mut terminal, client, &stop_flag, sort_spec).await;
 
     let _ = disable_raw_mode();
     let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show);
@@ -77,44 +76,17 @@ async fn run_dashboard_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     client: &PmrClient,
     stop_flag: &Arc<AtomicBool>,
+    sort_spec: &str,
 ) -> Result<()> {
+    let mut sort_spec = sort_spec.to_string();
     let mut processes: Vec<ProcessDescription> = client.list().await.unwrap_or_default();
+    sort_processes(&mut processes, Some(&sort_spec), "id");
     let mut selected_idx: usize = 0;
     let mut active_pane: usize = 0; // 0: list, 1: logs, 2: metrics, 3: metadata
     let mut scroll_offsets: [u16; 4] = [0; 4];
     let mut logs_by_id: BTreeMap<u32, VecDeque<(bool, String)>> = BTreeMap::new();
 
-    // Seed initial logs from disk
-    for p in &processes {
-        let mut q = VecDeque::new();
-        if let Ok(content) = fs::read_to_string(&p.pm2_env.pm_out_log_path) {
-            for line in content
-                .lines()
-                .rev()
-                .take(100)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-            {
-                q.push_back((false, line.to_string()));
-            }
-        }
-        if let Ok(content) = fs::read_to_string(&p.pm2_env.pm_err_log_path) {
-            for line in content
-                .lines()
-                .rev()
-                .take(50)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-            {
-                q.push_back((true, line.to_string()));
-            }
-        }
-        logs_by_id.insert(p.pm_id, q);
-    }
-
-    let mut bus_rx = client.subscribe_bus().await.ok();
+    let mut bus_rx = client.subscribe_bus_bounded().await.ok();
     let mut last_refresh = Instant::now();
 
     loop {
@@ -122,8 +94,29 @@ async fn run_dashboard_loop(
             break;
         }
 
+        // Only the selected process needs an output cache. Read bounded file tails
+        // when selection changes instead of loading every process's entire logs.
+        if let Some(p) = processes.get(selected_idx) {
+            if !logs_by_id.contains_key(&p.pm_id) {
+                logs_by_id.clear();
+                let mut q = VecDeque::new();
+                for (is_err, path, count) in [
+                    (false, &p.pm2_env.pm_out_log_path, 100),
+                    (true, &p.pm2_env.pm_err_log_path, 50),
+                ] {
+                    for line in crate::live::read_tail(path, count) {
+                        q.push_back((is_err, line));
+                    }
+                }
+                logs_by_id.insert(p.pm_id, q);
+            }
+        } else {
+            logs_by_id.clear();
+        }
+
         if let Some(ref mut rx) = bus_rx {
-            while let Ok(ev) = rx.try_recv() {
+            for _ in 0..128 {
+                let Ok(ev) = rx.try_recv() else { break };
                 if ev.event == "log:out" || ev.event == "log:err" {
                     if let Some(id) = ev.process.pm_id.as_u64().map(|n| n as u32) {
                         let is_err = ev.event == "log:err";
@@ -132,9 +125,16 @@ async fn run_dashboard_loop(
                                 .get(selected_idx)
                                 .map(|p| p.pm_id == id)
                                 .unwrap_or(false);
+                            if !is_selected {
+                                continue;
+                            }
                             let q = logs_by_id.entry(id).or_default();
                             for l in data.lines() {
-                                q.push_back((is_err, l.to_string()));
+                                let mut end = l.len().min(4096);
+                                while !l.is_char_boundary(end) {
+                                    end -= 1;
+                                }
+                                q.push_back((is_err, l[..end].to_string()));
                                 if q.len() > 400 {
                                     q.pop_front();
                                 } else if is_selected && scroll_offsets[1] > 0 {
@@ -149,9 +149,8 @@ async fn run_dashboard_loop(
 
         if last_refresh.elapsed() >= Duration::from_millis(800) {
             if let Ok(new_list) = client.list().await {
-                processes = new_list;
-                if !processes.is_empty() && selected_idx >= processes.len() {
-                    selected_idx = processes.len() - 1;
+                if refresh_processes(&mut processes, &mut selected_idx, new_list, &sort_spec) {
+                    scroll_offsets[1] = 0;
                 }
             }
             last_refresh = Instant::now();
@@ -237,6 +236,7 @@ async fn run_dashboard_loop(
                 .block(
                     Block::default()
                         .title(" Process List ")
+                        .title_bottom(sort_control_label(&sort_spec))
                         .borders(Borders::ALL)
                         .border_style(pane_border(0)),
                 )
@@ -389,7 +389,7 @@ async fn run_dashboard_loop(
             // 5. Status Bar
             let help_line = Line::from(vec![
                 Span::raw(
-                    " left/right/tab: switch boards | up/down: select/scroll | r: restart | s: stop | q/Ctrl-C: exit ",
+                    " left/right/tab: boards | up/down: select/scroll | o: sort | r: restart | s: stop | q/Ctrl-C: exit ",
                 ),
                 Span::styled(
                     "  PMR Dashboard ",
@@ -404,6 +404,9 @@ async fn run_dashboard_loop(
         if event::poll(Duration::from_millis(100))? {
             if let CEvent::Key(key) = event::read()? {
                 match key.code {
+                    KeyCode::Char('o') => {
+                        toggle_process_sort(&mut processes, &mut selected_idx, &mut sort_spec);
+                    }
                     KeyCode::Char('q') | KeyCode::Esc => break,
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
                     KeyCode::Left => {
@@ -477,6 +480,47 @@ async fn run_dashboard_loop(
     Ok(())
 }
 
+/// Keep selection attached to a process even when sorting moves its row.
+/// Return whether the selected process changed (for example, after deletion).
+fn refresh_processes(
+    processes: &mut Vec<ProcessDescription>,
+    selected_idx: &mut usize,
+    mut new_list: Vec<ProcessDescription>,
+    sort_spec: &str,
+) -> bool {
+    let selected_id = processes.get(*selected_idx).map(|p| p.pm_id);
+    sort_processes(&mut new_list, Some(sort_spec), "id");
+    *selected_idx = selected_id
+        .and_then(|id| new_list.iter().position(|p| p.pm_id == id))
+        .unwrap_or_else(|| (*selected_idx).min(new_list.len().saturating_sub(1)));
+    let changed = new_list.get(*selected_idx).map(|p| p.pm_id) != selected_id;
+    *processes = new_list;
+    changed
+}
+
+fn sort_control_label(sort_spec: &str) -> String {
+    let (field, desc) = process_sort_order(Some(sort_spec), "id");
+    format!(
+        " Sort: {} {} [o] ",
+        field,
+        if desc { "desc" } else { "asc" }
+    )
+}
+
+fn toggle_process_sort(
+    processes: &mut [ProcessDescription],
+    selected_idx: &mut usize,
+    sort_spec: &mut String,
+) {
+    let (field, desc) = process_sort_order(Some(sort_spec), "id");
+    *sort_spec = format!("{}:{}", field, if desc { "asc" } else { "desc" });
+    let selected_id = processes.get(*selected_idx).map(|p| p.pm_id);
+    sort_processes(processes, Some(sort_spec), "id");
+    *selected_idx = selected_id
+        .and_then(|id| processes.iter().position(|p| p.pm_id == id))
+        .unwrap_or(0);
+}
+
 /// Legacy terminal bar monitor (`pmr imonit`), matching `lib/API/Monit.js`.
 pub async fn run_imonit(client: &PmrClient, use_color: bool) -> Result<()> {
     let mut sys = sysinfo::System::new_all();
@@ -542,4 +586,97 @@ pub async fn run_imonit(client: &PmrClient, use_color: bool) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::process::{Monit, Pm2Env};
+
+    fn process(id: u32) -> ProcessDescription {
+        ProcessDescription {
+            pm_id: id,
+            pid: 0,
+            name: format!("worker-{id}"),
+            pm2_env: Pm2Env::from_pm2_value(serde_json::json!({
+                "pm_id": id,
+                "name": format!("worker-{id}"),
+                "pm_exec_path": "/bin/sh",
+                "pm_cwd": "/tmp",
+                "pm_out_log_path": "/dev/null",
+                "pm_err_log_path": "/dev/null",
+                "pm_pid_path": "/dev/null"
+            }))
+            .unwrap(),
+            monit: Monit::default(),
+        }
+    }
+
+    #[test]
+    fn dashboard_sort_shortcut_preserves_selection_in_both_directions() {
+        let mut processes = vec![process(3), process(2), process(1)];
+        let mut selected = 0;
+        let mut sort = "desc".to_string();
+        assert_eq!(sort_control_label(&sort), " Sort: id desc [o] ");
+        toggle_process_sort(&mut processes, &mut selected, &mut sort);
+        assert_eq!(
+            processes.iter().map(|p| p.pm_id).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        assert_eq!(selected, 2);
+        assert_eq!(sort_control_label(&sort), " Sort: id asc [o] ");
+        toggle_process_sort(&mut processes, &mut selected, &mut sort);
+        assert_eq!(
+            processes.iter().map(|p| p.pm_id).collect::<Vec<_>>(),
+            vec![3, 2, 1]
+        );
+        assert_eq!(selected, 0);
+    }
+
+    #[test]
+    fn dashboard_refresh_keeps_sort_and_tracks_selected_id() {
+        let mut processes = vec![process(2), process(1)];
+        let mut selected = 0;
+        assert!(!refresh_processes(
+            &mut processes,
+            &mut selected,
+            vec![process(1), process(2), process(3)],
+            "desc"
+        ));
+        assert_eq!(
+            processes.iter().map(|p| p.pm_id).collect::<Vec<_>>(),
+            vec![3, 2, 1]
+        );
+        assert_eq!(selected, 1);
+        assert!(refresh_processes(
+            &mut processes,
+            &mut selected,
+            vec![process(3), process(1)],
+            "desc"
+        ));
+        assert_eq!(processes[selected].pm_id, 1);
+        assert!(refresh_processes(
+            &mut processes,
+            &mut selected,
+            vec![],
+            "desc"
+        ));
+        assert_eq!(selected, 0);
+    }
+
+    #[test]
+    fn dashboard_shortcut_reverses_field_sort_and_handles_empty_list() {
+        let mut processes = vec![process(1), process(2)];
+        processes[0].monit.memory = 100;
+        processes[1].monit.memory = 200;
+        let mut selected = 0;
+        let mut sort = "memory:asc".to_string();
+        toggle_process_sort(&mut processes, &mut selected, &mut sort);
+        assert_eq!(sort, "memory:desc");
+        assert_eq!(processes[0].pm_id, 2);
+        assert_eq!(processes[selected].pm_id, 1);
+        processes.clear();
+        toggle_process_sort(&mut processes, &mut selected, &mut sort);
+        assert_eq!(selected, 0);
+    }
 }

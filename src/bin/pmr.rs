@@ -298,7 +298,7 @@ struct Cli {
     #[arg(long = "disable-trace", global = true)]
     disable_trace: bool,
 
-    /// Sort processes according to field's name (e.g. name:asc, cpu:desc, memory:desc)
+    /// Sort asc/desc (process ID; logs by file modification time), or processes by field:order
     #[arg(long = "sort", global = true)]
     sort: Option<String>,
 
@@ -324,6 +324,52 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Queue a durable one-shot command (use -- before its arguments)
+    Run {
+        program: String,
+        #[arg(last = true)]
+        args: Vec<String>,
+        /// Supply a UUID to make submission retries idempotent
+        #[arg(long)]
+        id: Option<String>,
+        /// Wait, print retained output, and return the command's exit code
+        #[arg(long)]
+        wait: bool,
+    },
+    /// Search and inspect durable command history (JSON)
+    History {
+        #[command(subcommand)]
+        action: Option<pmr::history_cli::Action>,
+    },
+    /// Show or configure shared process and disk queue limits
+    Limits {
+        #[arg(long)]
+        running: Option<usize>,
+        #[arg(long)]
+        queued: Option<usize>,
+    },
+    /// Show or configure retention; zero disables age/count expiry
+    Retention {
+        #[arg(long)]
+        history_days: Option<u32>,
+        #[arg(long)]
+        output_days: Option<u32>,
+        #[arg(long)]
+        max_records: Option<u64>,
+        /// Retained tail per pmr run command, in bytes (default 1048576)
+        #[arg(long)]
+        output_bytes: Option<u64>,
+    },
+    /// Install a verified release from github.com/liammendes/pmr
+    SelfUpdate {
+        /// Only check for an update
+        #[arg(long)]
+        check: bool,
+        /// Select an exact release, for example 1.1.0
+        #[arg(long = "release")]
+        release: Option<String>,
+    },
+
     /// Start and daemonize an app
     #[command(name = "start")]
     Start {
@@ -405,12 +451,16 @@ enum Commands {
     #[command(name = "env")]
     Env { id: String },
 
-    /// List all processes
+    /// List the newest 25 processes by default
     #[command(
         name = "list",
         visible_aliases = ["ls", "l", "ps", "status"]
     )]
-    List,
+    List {
+        /// Maximum processes to display (0 shows all)
+        #[arg(long, default_value_t = 25)]
+        limit: usize,
+    },
 
     /// List all processes in JSON format
     #[command(name = "jlist")]
@@ -420,13 +470,20 @@ enum Commands {
     #[command(name = "prettylist")]
     Prettylist,
 
-    /// Stream logs file. Default stream all logs
+    /// Show and follow the 5 most recently modified log files by default
     #[command(name = "logs", visible_alias = "log")]
     Logs {
         #[arg(default_value = "all")]
         target: String,
-        #[arg(long = "lines", default_value_t = 15, allow_hyphen_values = true)]
-        lines: isize,
+        /// Tail N lines (default: 15 per file; live mode shows the latest command's output)
+        #[arg(long = "lines", allow_hyphen_values = true)]
+        lines: Option<isize>,
+        /// Maximum unique log files to show and follow (0 follows all)
+        #[arg(long, default_value_t = 5)]
+        limit: usize,
+        /// Live screen showing the newest process and its latest output
+        #[arg(long, conflicts_with_all = ["nostream", "raw", "json", "format", "limit", "sort"])]
+        live: bool,
         #[arg(long = "raw")]
         raw: bool,
         #[arg(long = "json")]
@@ -986,6 +1043,20 @@ async fn main() {
 
     // Handle internal/offline subcommands that do not require an active daemon first
     match cmd {
+        Commands::SelfUpdate { check, release } => {
+            let check = *check;
+            let release = release.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                pmr::self_update::update(check, release.as_deref())
+            })
+            .await
+            .unwrap_or_else(|error| Err(error.into()));
+            if let Err(error) = result {
+                eprintln!("Self-update: {error}");
+                std::process::exit(ERROR_EXIT);
+            }
+            return;
+        }
         Commands::InternalDaemon => {
             if let Err(e) = run_daemon(paths).await {
                 eprintln!("Daemon error: {}", e);
@@ -1076,7 +1147,7 @@ async fn main() {
                     println!("{}Completion uninstalled", PREFIX_MSG);
                 }
                 _ => {
-                    println!("# PMR shell completion\ncomplete -W \"start startOrRestart startOrReload stop restart reload delete scale reset describe env list ls jlist prettylist logs flush reloadLogs send attach sendSignal trigger pid id inspect ping update deepUpdate kill save cleardump resurrect startup unstartup logrotate ecosystem serve web monit imonit monitor unmonitor set multiset get conf config unset report sysinfos sysmonit install uninstall module:generate create package publish link unlink open plus autoinstall deploy pull forward backward profile:mem profile:cpu examples completion\" pmr pm2");
+                    println!("# PMR shell completion\ncomplete -W \"run history limits retention self-update start startOrRestart startOrReload stop restart reload delete scale reset describe env list ls jlist prettylist logs flush reloadLogs send attach sendSignal trigger pid id inspect ping update deepUpdate kill save cleardump resurrect startup unstartup logrotate ecosystem serve web monit imonit monitor unmonitor set multiset get conf config unset report sysinfos sysmonit install uninstall module:generate create package publish link unlink open plus autoinstall deploy pull forward backward profile:mem profile:cpu examples completion\" pmr pm2");
                 }
             }
             return;
@@ -1174,6 +1245,8 @@ async fn main() {
             LogOptions {
                 target: "all".to_string(),
                 lines: 0,
+                limit: 0,
+                sort_desc: true,
                 raw: false,
                 json: false,
                 format: false,
@@ -1213,12 +1286,78 @@ async fn execute_command(
         if !silent {
             println!(
                 "{}",
-                render_process_list(procs, cli.mini_list, cli.sort.as_deref(), use_color)
+                render_process_list(procs, cli.mini_list, cli.sort.as_deref(), use_color, 0)
             );
         }
     };
 
     match cmd {
+        Commands::Run {
+            program,
+            args,
+            id,
+            wait,
+        } => {
+            pmr::history_cli::run(
+                client,
+                pmr::history_cli::RunOptions {
+                    program: program.clone(),
+                    args: args.clone(),
+                    id: id.clone(),
+                    wait: *wait,
+                    name: cli.process_name.clone(),
+                    namespace: cli.namespace.clone(),
+                    cwd: cli.cwd.clone(),
+                    interpreter: cli.interpreter.clone(),
+                },
+            )
+            .await?;
+        }
+        Commands::History { action } => {
+            let ascending = match cli.sort.as_deref() {
+                None | Some("desc") => false,
+                Some("asc") => true,
+                _ => return Err(anyhow!("history --sort must be asc or desc")),
+            };
+            pmr::history_cli::history(
+                client,
+                action,
+                cli.process_name.clone(),
+                cli.namespace.clone(),
+                ascending,
+            )
+            .await?;
+        }
+        Commands::Limits { running, queued } => {
+            pmr::history_cli::configure(
+                client,
+                pmr::history::SettingsPatch {
+                    max_running: *running,
+                    max_queued: *queued,
+                    ..Default::default()
+                },
+            )
+            .await?;
+        }
+        Commands::Retention {
+            history_days,
+            output_days,
+            max_records,
+            output_bytes,
+        } => {
+            pmr::history_cli::configure(
+                client,
+                pmr::history::SettingsPatch {
+                    history_days: *history_days,
+                    output_days: *output_days,
+                    max_records: *max_records,
+                    output_bytes: *output_bytes,
+                    ..Default::default()
+                },
+            )
+            .await?;
+        }
+
         Commands::Start {
             targets,
             script_args,
@@ -1245,6 +1384,8 @@ async fn execute_command(
                     LogOptions {
                         target: attach_target,
                         lines: 0,
+                        limit: 0,
+                        sort_desc: true,
                         raw: false,
                         json: false,
                         format: false,
@@ -1327,6 +1468,8 @@ async fn execute_command(
                     LogOptions {
                         target: attach_target,
                         lines: 0,
+                        limit: 0,
+                        sort_desc: true,
                         raw: false,
                         json: false,
                         format: false,
@@ -1433,17 +1576,36 @@ async fn execute_command(
                 }
             }
         }
-        Commands::List => {
-            if cli.watch {
-                loop {
-                    let procs = client.list().await?;
-                    print!("\x1b[2J\x1b[H");
-                    show_list(&procs);
-                    tokio::time::sleep(Duration::from_millis(1000)).await;
+        Commands::List { limit } => {
+            let sort = cli.sort.as_deref().unwrap_or("desc");
+            loop {
+                let list = client.list_display(*limit, sort).await?;
+                if !silent {
+                    if cli.watch {
+                        print!("\x1b[2J\x1b[H");
+                    }
+                    println!(
+                        "{}",
+                        render_process_list(
+                            &list.processes,
+                            cli.mini_list,
+                            Some(sort),
+                            use_color,
+                            0
+                        )
+                    );
+                    if list.processes.len() < list.total {
+                        println!(
+                            "Showing {} of {} processes. Use --limit 0 to show all.",
+                            list.processes.len(),
+                            list.total
+                        );
+                    }
                 }
-            } else {
-                let procs = client.list().await?;
-                show_list(&procs);
+                if !cli.watch {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(1000)).await;
             }
         }
         Commands::Jlist => {
@@ -1457,6 +1619,8 @@ async fn execute_command(
         Commands::Logs {
             target,
             lines,
+            limit,
+            live,
             raw,
             json,
             format,
@@ -1470,24 +1634,32 @@ async fn execute_command(
                 opt.clone()
                     .unwrap_or_else(|| "YYYY-MM-DD-HH:mm:ss".to_string())
             });
-            let resolved_lines = if *lines < 0 { 15 } else { *lines as usize };
-            run_logs(
-                client,
-                LogOptions {
-                    target: target.clone(),
-                    lines: resolved_lines,
-                    raw: *raw,
-                    json: *json,
-                    format: *format,
-                    err_only: *err,
-                    out_only: *out,
-                    timestamp: ts,
-                    nostream: *nostream,
-                    highlight: highlight.clone().filter(|s| !s.is_empty()),
-                    use_color,
-                },
-            )
-            .await?;
+            let resolved_lines = resolve_log_lines(*lines, *live);
+            let sort_desc = match cli.sort.as_deref().unwrap_or("desc") {
+                s if s.eq_ignore_ascii_case("asc") => false,
+                s if s.eq_ignore_ascii_case("desc") => true,
+                _ => return Err(anyhow!("logs --sort must be asc or desc")),
+            };
+            let options = LogOptions {
+                target: target.clone(),
+                lines: resolved_lines,
+                limit: *limit,
+                sort_desc,
+                raw: *raw,
+                json: *json,
+                format: *format,
+                err_only: *err,
+                out_only: *out,
+                timestamp: ts,
+                nostream: *nostream,
+                highlight: highlight.clone().filter(|s| !s.is_empty()),
+                use_color,
+            };
+            if *live {
+                pmr::live::run_live_logs(client, options).await?;
+            } else {
+                run_logs(client, options).await?;
+            }
         }
         Commands::Flush { api } => {
             if !silent {
@@ -1800,7 +1972,7 @@ async fn execute_command(
             show_list(&procs);
         }
         Commands::Monit => {
-            run_dashboard(client).await?;
+            run_dashboard(client, cli.sort.as_deref().unwrap_or("desc")).await?;
         }
         Commands::Imonit => {
             run_imonit(client, use_color).await?;
@@ -2043,6 +2215,15 @@ async fn execute_command(
     Ok(())
 }
 
+fn resolve_log_lines(lines: Option<isize>, live: bool) -> usize {
+    match lines {
+        Some(value) if value >= 0 => value as usize,
+        Some(_) => 15,
+        None if live => usize::MAX,
+        None => 15,
+    }
+}
+
 fn print_conf_values(val: &serde_json::Value, filter_module: Option<&str>, use_color: bool) {
     let Some(obj) = val.as_object() else {
         return;
@@ -2104,4 +2285,27 @@ fn print_examples() {
     $ pmr startup
 "#
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn live_lines_are_only_limited_when_requested() {
+        assert_eq!(resolve_log_lines(None, true), usize::MAX);
+        assert_eq!(resolve_log_lines(Some(1), true), 1);
+        assert_eq!(resolve_log_lines(Some(40), true), 40);
+        assert_eq!(resolve_log_lines(None, false), 15);
+        assert_eq!(resolve_log_lines(Some(-1), false), 15);
+        let cli = Cli::try_parse_from(["pmr", "logs", "--live"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Logs {
+                lines: None,
+                live: true,
+                ..
+            })
+        ));
+    }
 }

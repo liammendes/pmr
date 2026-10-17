@@ -24,7 +24,7 @@ use crate::constants::{
 };
 use crate::paths::PmrPaths;
 use crate::process::{AxmAction, AxmMetric, Monit, Pm2Env, ProcessDescription};
-use crate::protocol::{BusEvent, BusProcessRef};
+use crate::protocol::{BusEvent, BusProcessRef, ProcessList};
 
 pub struct ClusterBalancer {
     pub workers: Arc<std::sync::Mutex<BTreeMap<u32, u16>>>,
@@ -46,6 +46,7 @@ pub struct ManagedProcess {
 }
 
 pub struct God {
+    pub runner: Arc<crate::runner::Runner>,
     pub clusters_db: BTreeMap<u32, ManagedProcess>,
     pub cluster_balancers: BTreeMap<u16, ClusterBalancer>,
     pub next_id: u32,
@@ -64,10 +65,15 @@ pub fn now_ms() -> u64 {
 }
 
 impl God {
-    pub fn new(paths: PmrPaths, bus_tx: broadcast::Sender<BusEvent>) -> Arc<Mutex<Self>> {
+    pub fn new(
+        paths: PmrPaths,
+        bus_tx: broadcast::Sender<BusEvent>,
+        runner: Arc<crate::runner::Runner>,
+    ) -> Arc<Mutex<Self>> {
         let mut sys = System::new_all();
         sys.refresh_all();
         Arc::new(Mutex::new(Self {
+            runner,
             clusters_db: BTreeMap::new(),
             cluster_balancers: BTreeMap::new(),
             next_id: 0,
@@ -169,8 +175,34 @@ impl God {
     }
 
     pub fn refresh_monitor_data(&mut self) {
-        self.sys.refresh_processes(ProcessesToUpdate::All, true);
-        for proc in self.clusters_db.values_mut() {
+        let ids: Vec<_> = self.clusters_db.keys().copied().collect();
+        self.refresh_monitor_data_for(&ids);
+    }
+
+    fn refresh_monitor_data_for(&mut self, ids: &[u32]) {
+        let pids: Vec<_> = ids
+            .iter()
+            .filter_map(|id| self.clusters_db.get(id))
+            .filter(|p| matches!(p.pm2_env.status.as_str(), ONLINE_STATUS | LAUNCHING_STATUS))
+            .map(|p| {
+                Pid::from_u32(
+                    p.pm2_env
+                        .axm_options
+                        .get("pid")
+                        .and_then(|v| v.as_u64())
+                        .map_or(p.pid, |p| p as u32),
+                )
+            })
+            .filter(|pid| pid.as_u32() > 0)
+            .collect();
+        if !pids.is_empty() {
+            self.sys
+                .refresh_processes(ProcessesToUpdate::Some(&pids), true);
+        }
+        for id in ids {
+            let Some(proc) = self.clusters_db.get_mut(id) else {
+                continue;
+            };
             let target_pid = proc
                 .pm2_env
                 .axm_options
@@ -212,7 +244,7 @@ impl God {
     }
 
     pub fn get_formatted_process(&mut self, id: u32) -> Option<ProcessDescription> {
-        self.refresh_monitor_data();
+        self.refresh_monitor_data_for(&[id]);
         self.clusters_db.get(&id).map(|p| ProcessDescription {
             pid: p.pid,
             name: p.pm2_env.name.clone(),
@@ -220,6 +252,30 @@ impl God {
             pm_id: p.pm2_env.pm_id,
             monit: p.monit.clone(),
         })
+    }
+
+    /// Select IDs before refreshing metrics or cloning process environments.
+    pub fn get_process_list(&mut self, limit: usize, descending: bool) -> ProcessList {
+        let total = self.clusters_db.len();
+        let limit = if limit == 0 { total } else { limit };
+        let ids: Vec<_> = if descending {
+            self.clusters_db.keys().rev().take(limit).copied().collect()
+        } else {
+            self.clusters_db.keys().take(limit).copied().collect()
+        };
+        self.refresh_monitor_data_for(&ids);
+        let processes = ids
+            .into_iter()
+            .filter_map(|id| self.clusters_db.get(&id))
+            .map(|p| ProcessDescription {
+                pid: p.pid,
+                name: p.pm2_env.name.clone(),
+                pm2_env: p.pm2_env.clone(),
+                pm_id: p.pm2_env.pm_id,
+                monit: p.monit.clone(),
+            })
+            .collect();
+        ProcessList { total, processes }
     }
 }
 
@@ -370,10 +426,35 @@ pub fn start_process_id(
             exit_tx,
             log_reload_rx,
             generation,
+            permit,
+            history,
         ) = {
             let mut g = god.lock().await;
+            if g.pm2_being_killed {
+                return Err(anyhow!("daemon is shutting down"));
+            }
             let paths = g.paths.clone();
             let bus_tx = g.bus_tx.clone();
+            if let Some(proc) = g.clusters_db.get(&id) {
+                if proc.generation > 0
+                    && proc.pm2_env.status == LAUNCHING_STATUS
+                    && !*proc.exit_tx.borrow()
+                {
+                    return Err(anyhow!("Process {} is already launching", id));
+                }
+                if proc.pm2_env.status == ONLINE_STATUS && proc.pid > 0 {
+                    return Ok(ProcessDescription {
+                        pid: proc.pid,
+                        name: proc.pm2_env.name.clone(),
+                        pm2_env: proc.pm2_env.clone(),
+                        pm_id: id,
+                        monit: proc.monit.clone(),
+                    });
+                }
+            }
+            let permit = g.runner.capacity.acquire()
+                .ok_or_else(|| anyhow!("running process limit reached; use pmr run to queue commands or pmr limits to adjust"))?;
+            let history = Arc::clone(&g.runner.store);
             let proc = g
                 .clusters_db
                 .get_mut(&id)
@@ -402,11 +483,7 @@ pub fn start_process_id(
             if proc.pm2_env.created_at.is_none() {
                 proc.pm2_env.created_at = Some(proc.pm2_env.pm_uptime);
             }
-            proc.pm2_env.status = if proc.pm2_env.wait_ready {
-                LAUNCHING_STATUS.to_string()
-            } else {
-                ONLINE_STATUS.to_string()
-            };
+            proc.pm2_env.status = LAUNCHING_STATUS.to_string();
 
             // Refresh version & git metadata
             proc.pm2_env.version = find_package_version(
@@ -433,6 +510,8 @@ pub fn start_process_id(
                 e_tx,
                 log_reload_rx,
                 gen,
+                permit,
+                history,
             )
         };
 
@@ -533,9 +612,58 @@ pub fn start_process_id(
             cmd.env("NODE_OPTIONS", combined);
         }
 
-        let mut child = match cmd.spawn() {
+        let history_spec = crate::history::CommandSpec {
+            id: Uuid::new_v4().to_string(),
+            program: program.clone(),
+            args: cmd_args.clone(),
+            cwd: env.pm_cwd.clone(),
+            name: env.name.clone(),
+            namespace: env.namespace.clone(),
+            env: BTreeMap::new(),
+        };
+        let history_seq = match history
+            .call(move |s| s.submit(history_spec, "managed"))
+            .await
+        {
+            Ok(record) => record.seq,
+            Err(error) => {
+                let mut g = god.lock().await;
+                if let Some(proc) = g.clusters_db.get_mut(&id) {
+                    proc.pm2_env.status = ERRORED_STATUS.into();
+                }
+                let _ = exit_tx.send(true);
+                return Err(error);
+            }
+        };
+        let mut spawn_guard = god.lock().await;
+        let valid = !spawn_guard.pm2_being_killed
+            && spawn_guard.clusters_db.get(&id).is_some_and(|p| {
+                p.generation == generation && p.pm2_env.status == LAUNCHING_STATUS
+            });
+        if !valid {
+            drop(spawn_guard);
+            let _ = history
+                .call(move |s| s.finish(history_seq, "cancelled", None))
+                .await;
+            let _ = exit_tx.send(true);
+            return Err(anyhow!("Process launch cancelled"));
+        }
+        let spawned = cmd.spawn();
+        if let Ok(child) = &spawned {
+            if let Some(proc) = spawn_guard.clusters_db.get_mut(&id) {
+                proc.pid = child.id().unwrap_or(0);
+                if !proc.pm2_env.wait_ready {
+                    proc.pm2_env.status = ONLINE_STATUS.into();
+                }
+            }
+        }
+        drop(spawn_guard);
+        let mut child = match spawned {
             Ok(c) => c,
             Err(e) => {
+                let _ = history
+                    .call(move |s| s.finish(history_seq, "failed", None))
+                    .await;
                 let mut g = god.lock().await;
                 let _ = exit_tx.send(true);
                 if let Some(proc) = g.clusters_db.get_mut(&id) {
@@ -568,6 +696,9 @@ pub fn start_process_id(
         };
 
         let pid = child.id().unwrap_or(0);
+        if let Err(error) = history.call(move |s| s.set_pid(history_seq, pid)).await {
+            eprintln!("history pid update: {error}");
+        }
         if env.pm_pid_path != "/dev/null" {
             if let Some(parent) = Path::new(&env.pm_pid_path).parent() {
                 let _ = fs::create_dir_all(parent);
@@ -672,8 +803,25 @@ pub fn start_process_id(
         let mut exit_rx_for_ready = exit_tx.subscribe();
         tokio::spawn(async move {
             let status_res = child.wait().await;
+            drop(permit);
             let _ = exit_tx.send(true);
             let exit_code = status_res.ok().and_then(|s| s.code()).unwrap_or(-1);
+            if let Err(error) = history
+                .call(move |s| {
+                    s.finish(
+                        history_seq,
+                        if exit_code == 0 {
+                            "succeeded"
+                        } else {
+                            "failed"
+                        },
+                        Some(exit_code),
+                    )
+                })
+                .await
+            {
+                eprintln!("history completion: {error}");
+            }
             handle_process_exit(god_exit, id, generation, exit_code, stop_notify).await;
         });
 
@@ -1418,13 +1566,27 @@ pub async fn reload_process_id(
     conf: Option<Value>,
     soft: bool,
 ) -> Result<ProcessDescription> {
-    let (is_cluster_online, old_pid, mut old_env, old_ipc_tx, old_exit_rx, listen_timeout) = {
+    let (
+        is_cluster_online,
+        old_pid,
+        mut old_env,
+        old_ipc_tx,
+        old_exit_rx,
+        listen_timeout,
+        previous_lifecycle,
+    ) = {
         let mut g = god.lock().await;
         let proc = g
             .clusters_db
             .get_mut(&id)
             .ok_or_else(|| anyhow!("Process {} not found", id))?;
 
+        let previous_lifecycle = (
+            proc.generation,
+            proc.exit_tx.clone(),
+            proc.ready_tx.clone(),
+            Arc::clone(&proc.stop_notify),
+        );
         if let Some(ref patch) = conf {
             proc.pm2_env.apply_conf_patch(patch);
         }
@@ -1449,6 +1611,7 @@ pub async fn reload_process_id(
                 proc.ipc_tx.clone(),
                 proc.exit_tx.subscribe(),
                 proc.pm2_env.listen_timeout,
+                previous_lifecycle,
             )
         } else {
             let old_pid = proc.pid;
@@ -1462,7 +1625,15 @@ pub async fn reload_process_id(
             proc.pm2_env.unstable_restarts = 0;
             proc.pm2_env.prev_restart_delay = 0;
             proc.pm2_env.sync_flattened_env();
-            (true, old_pid, old_env, old_ipc, old_exit_rx, lt)
+            (
+                true,
+                old_pid,
+                old_env,
+                old_ipc,
+                old_exit_rx,
+                lt,
+                previous_lifecycle,
+            )
         }
     };
 
@@ -1489,7 +1660,24 @@ pub async fn reload_process_id(
     }
 
     // Launch new worker while old worker is still serving traffic
-    let desc = start_process_id(Arc::clone(&god), id).await?;
+    let desc = match start_process_id(Arc::clone(&god), id).await {
+        Ok(desc) => desc,
+        Err(error) => {
+            let mut g = god.lock().await;
+            if let Some(proc) = g.clusters_db.get_mut(&id) {
+                proc.pid = old_pid;
+                proc.pm2_env = old_env;
+                proc.ipc_tx = old_ipc_tx;
+                (
+                    proc.generation,
+                    proc.exit_tx,
+                    proc.ready_tx,
+                    proc.stop_notify,
+                ) = previous_lifecycle;
+            }
+            return Err(error);
+        }
+    };
 
     let mut ready_rx = {
         let g = god.lock().await;

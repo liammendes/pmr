@@ -48,3 +48,7 @@ Raspberry Pi and older Linux testing are particularly useful. Please include the
 AI-assisted contributions are welcome. The contributor remains responsible for understanding the code, its licence, and its behaviour. Include meaningful validation and do not invent test results.
 
 By submitting a contribution, you agree to license it under this project's AGPL-3.0-only licence. Preserve existing attribution. There is no separate contributor licence agreement.
+
+## Versioning
+
+Every PR must increase the version in `Cargo.toml` and update `Cargo.lock`. CI compares the version with the current base branch. Use a patch bump for fixes or documentation, a minor bump for compatible features, and a major bump for incompatible API changes. Update `CHANGELOG.md` in the same PR. If another PR lands first, rebase and choose the next available version. Release tags must exactly match the package version (`vX.Y.Z`).

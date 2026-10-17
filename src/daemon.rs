@@ -51,7 +51,9 @@ pub async fn run_daemon(paths: PmrPaths) -> Result<()> {
     let ipc_listener = UnixListener::bind(&paths.node_ipc_sock)?;
 
     let (bus_tx, _) = broadcast::channel::<BusEvent>(4096);
-    let god = God::new(paths.clone(), bus_tx.clone());
+    let runner = crate::runner::Runner::open(&paths.pm2_home.join("history.sqlite3"))?;
+    let god = God::new(paths.clone(), bus_tx.clone(), Arc::clone(&runner));
+    runner.start();
     {
         let g = god.lock().await;
         g.log_pm2(
@@ -86,7 +88,22 @@ pub async fn run_daemon(paths: PmrPaths) -> Result<()> {
                                 }
                             }
                         }
-                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(broadcast::error::RecvError::Lagged(count)) => {
+                            // Let live clients recover from disk without repeatedly
+                            // replacing correctly ordered events with file snapshots.
+                            let gap = json!({
+                                "event": "pmr:gap", "at": crate::god::now_ms(),
+                                "process": {"pm_id": null, "name": "PMR", "namespace": "default"},
+                                "data": {"dropped": count}
+                            });
+                            if writer
+                                .write_all(format!("{gap}\n").as_bytes())
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
                         Err(broadcast::error::RecvError::Closed) => break,
                     }
                 }
@@ -158,6 +175,7 @@ pub async fn run_daemon(paths: PmrPaths) -> Result<()> {
             let ids: Vec<u32> = {
                 let mut g = god_sig.lock().await;
                 g.pm2_being_killed = true;
+                g.runner.begin_shutdown();
                 let procs = g.get_formatted_processes();
                 let _ = dump_processes_to_disk(&g.paths, &procs, false);
                 g.clusters_db.keys().copied().collect()
@@ -169,6 +187,8 @@ pub async fn run_daemon(paths: PmrPaths) -> Result<()> {
         }
     });
 
+    // Bound concurrent requests independently of the number of history records.
+    let rpc_capacity = Arc::new(tokio::sync::Semaphore::new(256));
     // Main RPC loop
     loop {
         tokio::select! {
@@ -179,15 +199,18 @@ pub async fn run_daemon(paths: PmrPaths) -> Result<()> {
                 let Ok((stream, _)) = accept_res else {
                     continue;
                 };
+                let Ok(permit) = Arc::clone(&rpc_capacity).try_acquire_owned() else { continue };
                 let god_rpc = Arc::clone(&god);
                 let shutdown_rpc = Arc::clone(&shutdown_notify);
                 tokio::spawn(async move {
+                    let _permit = permit;
                     let _ = handle_rpc_connection(stream, god_rpc, shutdown_rpc).await;
                 });
             }
         }
     }
 
+    runner.shutdown().await;
     // Cleanup files before exit
     let _ = fs::remove_file(&paths.daemon_rpc_port);
     let _ = fs::remove_file(&paths.daemon_pub_port);
@@ -204,9 +227,14 @@ async fn handle_rpc_connection(
     shutdown_notify: Arc<Notify>,
 ) -> Result<()> {
     let (reader, mut writer) = stream.into_split();
-    let mut lines = BufReader::new(reader).lines();
+    let mut reader = BufReader::new(reader);
 
-    while let Ok(Some(line)) = lines.next_line().await {
+    while let Some(line) = tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        read_rpc_line(&mut reader),
+    )
+    .await??
+    {
         if line.trim().is_empty() {
             continue;
         }
@@ -229,8 +257,45 @@ async fn handle_rpc_connection(
     Ok(())
 }
 
+async fn read_rpc_line<R: tokio::io::AsyncRead + Unpin>(
+    reader: &mut BufReader<R>,
+) -> Result<Option<String>> {
+    let mut bytes = Vec::new();
+    loop {
+        let available = reader.fill_buf().await?;
+        if available.is_empty() {
+            return if bytes.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(String::from_utf8(bytes)?))
+            };
+        }
+        let count = available
+            .iter()
+            .position(|&b| b == b'\n')
+            .map_or(available.len(), |n| n + 1);
+        if bytes.len() + count > 2 * 1024 * 1024 {
+            anyhow::bail!("RPC request exceeds 2 MiB");
+        }
+        bytes.extend_from_slice(&available[..count]);
+        let done = bytes.last() == Some(&b'\n');
+        reader.consume(count);
+        if done {
+            return Ok(Some(String::from_utf8(bytes)?));
+        }
+    }
+}
+
 async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bool) {
     match req {
+        RpcRequest::History { request } => {
+            let runner = Arc::clone(&god.lock().await.runner);
+            let result = match runner.handle(request).await {
+                Ok(value) => RpcResponse::success(value),
+                Err(error) => RpcResponse::err(error.to_string()),
+            };
+            (result, false)
+        }
         RpcRequest::Ping => (RpcResponse::success(json!({ "msg": "pong" })), false),
         RpcRequest::GetVersion => (RpcResponse::success(PMR_VERSION), false),
         RpcRequest::GetReport => {
@@ -317,6 +382,51 @@ async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bo
             let mut g = god.lock().await;
             let procs = g.get_formatted_processes();
             (RpcResponse::success(procs), false)
+        }
+        RpcRequest::GetProcessList { limit, descending } => {
+            let mut g = god.lock().await;
+            (
+                RpcResponse::success(g.get_process_list(limit, descending)),
+                false,
+            )
+        }
+        RpcRequest::GetLatestLogProcess { target } => {
+            let selector = match crate::live::LogSelector::new(&target) {
+                Ok(selector) => selector,
+                Err(err) => return (RpcResponse::err(err.to_string()), false),
+            };
+            let g = god.lock().await;
+            let latest =
+                g.clusters_db.values().rev().find(|p| {
+                    selector.matches(p.pm2_env.pm_id, &p.pm2_env.name, &p.pm2_env.namespace)
+                });
+            // Do not refresh system metrics or serialize the full process inventory.
+            let mut latest = latest.map(|p| crate::live::LiveProcess::from(&p.pm2_env));
+            let store = Arc::clone(&g.runner.store);
+            drop(g);
+            match store.call(move |s| s.latest_run(&target)).await {
+                Ok(Some(row))
+                    if latest
+                        .as_ref()
+                        .is_none_or(|p| row.submitted_at >= p.created_at) =>
+                {
+                    latest = Some(crate::live::LiveProcess {
+                        history_id: Some(row.id.clone()),
+                        pm_id: 0,
+                        name: row.name,
+                        namespace: row.namespace,
+                        status: row.status,
+                        exit_code: row.exit_code,
+                        unique_id: row.id,
+                        created_at: row.submitted_at,
+                        out_path: String::new(),
+                        err_path: String::new(),
+                    });
+                }
+                Err(error) => return (RpcResponse::err(error.to_string()), false),
+                _ => {}
+            }
+            (RpcResponse::success(latest), false)
         }
         RpcRequest::Prepare { env, instances } => {
             match prepare_and_launch(god, *env, instances).await {
@@ -633,12 +743,14 @@ async fn dispatch_rpc(god: Arc<Mutex<God>>, req: RpcRequest) -> (RpcResponse, bo
         RpcRequest::NotifyKillPM2 => {
             let mut g = god.lock().await;
             g.pm2_being_killed = true;
+            g.runner.begin_shutdown();
             (RpcResponse::success(json!({ "ok": true })), false)
         }
         RpcRequest::KillMe { pid: _ } => {
             let ids: Vec<u32> = {
                 let mut g = god.lock().await;
                 g.pm2_being_killed = true;
+                g.runner.begin_shutdown();
                 g.emit_bus_event(
                     "pm2:kill",
                     json!("PM2"),

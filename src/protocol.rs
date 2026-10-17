@@ -7,6 +7,8 @@ use crate::process::{Pm2Env, ProcessDescription};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "method", content = "params")]
 pub enum RpcRequest {
+    #[serde(rename = "history")]
+    History { request: crate::history::Request },
     #[serde(rename = "ping")]
     Ping,
     #[serde(rename = "getVersion")]
@@ -17,6 +19,10 @@ pub enum RpcRequest {
     GetSystemData,
     #[serde(rename = "getMonitorData")]
     GetMonitorData,
+    #[serde(rename = "getProcessList")]
+    GetProcessList { limit: usize, descending: bool },
+    #[serde(rename = "getLatestLogProcess")]
+    GetLatestLogProcess { target: String },
     #[serde(rename = "prepare")]
     Prepare { env: Box<Pm2Env>, instances: usize },
     #[serde(rename = "startProcessId")]
@@ -95,6 +101,12 @@ pub enum RpcRequest {
         pwd: String,
         timeout_ms: u64,
     },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProcessList {
+    pub total: usize,
+    pub processes: Vec<ProcessDescription>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

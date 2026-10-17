@@ -14,6 +14,15 @@ PMR borrows PM2's CLI and process model. It is a separate implementation with it
 
 ## Moving a service
 
+PMR limits `list` (including `ls`, `l`, `ps` and `status`) to 25 processes and
+`logs` to 5 unique files by default, newest first. Use `--limit 0` for an unlimited
+view. `--sort asc|desc` orders processes by ID and logs by file modification time
+before applying the limit. `jlist` and `prettylist` remain unlimited. These display
+defaults differ from PM2; they do not stop processes or remove log files.
+
+`monit` starts in descending process ID order, with `--sort` to choose the initial
+order and `o` to reverse it interactively. It retains the full process list.
+
 Start with a non-production copy of your ecosystem file. Set a new `PMR_HOME`, remove inherited PM2 path overrides and choose unused application ports. Run lifecycle, crash recovery, readiness, log rotation and reload checks before moving traffic.
 
 The default state directory is `~/.pmr`. If `PMR_HOME` is absent, `PM2_HOME` is honoured. Saved process lists use the filename `dump.pm2`. `resurrect` can fall back to `~/.pm2/dump.pm2` when neither home variable is set and no PMR dump is available. Set an explicit home to avoid accidentally restoring another manager's saved processes.
